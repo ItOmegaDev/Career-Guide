@@ -1,0 +1,6 @@
+{
+  "name": "Профорієнтатор: Аналітика Ринку Праці та Парсинг Вакансій",
+  "description": "Інформаційно-аналітична система дослідження вимог роботодавців, парсингу вакансій (BeautifulSoup/Cheerio) та машинного навчання для профорієнтації учнів.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
