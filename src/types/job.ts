@@ -2,7 +2,7 @@ export interface Vacancy {
   id: string;
   title: string;
   company: string;
-  source: 'Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'LinkedIn' | 'Custom Scrape';
+  source: 'Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'LinkedIn' | 'Jooble.ua' | 'Custom Scrape';
   url?: string;
   city: string;
   isRemote: boolean;
@@ -40,14 +40,14 @@ export interface ProfessionAnalysis {
   averageSalaryUah: number;
   salaryRange: { min: number; max: number };
   juniorEntryBarrier: 'Низький' | 'Середній' | 'Високий';
-  competitionIndex: string; // e.g. "12 резюме на вакансію"
+  competitionIndex: string;
   forecast2026_2030: string;
   topHardSkills: SkillStats[];
   topSoftSkills: string[];
   topTools: string[];
   aiImpactAnalysis: string;
   schoolAdvice: {
-    targetSubjects: string[]; // e.g. Математика, Інформатика, Англійська
+    targetSubjects: string[];
     schoolProjects: string[];
     gradePlan: { grade: string; focus: string }[];
   };
@@ -55,13 +55,43 @@ export interface ProfessionAnalysis {
 
 export interface StudentProfile {
   name: string;
-  grade: string; // "8 клас", "9 клас", "10 клас", "11 клас", "Студент 1-2 курсу"
+  age: number; // e.g. 14, 15, 16, 17, 18
+  grade: string; // "8 клас", "9 клас", "10 клас", "11 клас", "1-2 курс коледжу"
+  schoolName?: string;
   favoriteSubjects: string[];
   currentSkills: string[];
   englishLevel: string;
   interests: string[];
   workPreference: 'remote' | 'office' | 'hybrid' | 'any';
   targetProfession?: string;
+  targetProfessions?: string[]; // multiple selected target professions
+  resumeText?: string; // student's CV, projects, pet-projects text
+  githubUrl?: string;
+  olympiadAchievements?: string; // e.g. МАН, олімпіади
+}
+
+export interface ResumeAuditResult {
+  matchPercentage: number;
+  extractedSkills: string[];
+  cvStrengths: string[];
+  cvWeaknesses: string[];
+  ageLegalAdvice: string; // Ukrainian Labor Code advisory (ст. 188-194 КЗпП України)
+  atsFeedback: string;
+  professionMatches: {
+    profession: string;
+    matchScore: number;
+    matchedSkills: string[];
+    missingSkills: string[];
+  }[];
+  recommendedCourses: { title: string; provider: string; url: string }[];
+  estimatedStudyHours?: number;
+  recommendedRoadmap?: {
+    stage: string;
+    duration: string;
+    goal: string;
+    milestones: string[];
+    resources: { title: string; url: string; platform: string; isFree: boolean }[];
+  }[];
 }
 
 export interface SkillGapResult {
@@ -70,6 +100,7 @@ export interface SkillGapResult {
   missingCriticalSkills: SkillStats[];
   missingOptionalSkills: SkillStats[];
   estimatedStudyHours: number;
+  encouragementMessage?: string;
   recommendedRoadmap: {
     stage: string;
     duration: string;
@@ -95,6 +126,21 @@ export interface ParseResult {
     skillsSelector: string;
     descSelector: string;
   };
-  htmlSamplePreview?: string;
+  logs: string[];
+}
+
+export interface BatchScrapeOptions {
+  sources: ('Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'Jooble.ua')[];
+  professions: string[];
+  limitPerSource: number;
+}
+
+export interface BatchScrapeResult {
+  success: boolean;
+  parsedAt: string;
+  totalFound: number;
+  timeTakenMs: number;
+  perSourceCount: Record<string, number>;
+  extractedVacancies: Vacancy[];
   logs: string[];
 }

@@ -3,14 +3,17 @@ export type Language = 'uk' | 'en';
 export const TRANSLATIONS = {
   uk: {
     // Header
+    // Header & Portal Nav
     appTitle: 'Профорієнтатор',
-    appSubtitle: 'Дослідження ринку праці',
+    appSubtitle: 'Аналітика ринку праці',
     vacanciesCount: 'Вакансій',
-    tabAnalytics: 'Аналітика',
-    tabScraper: 'Парсинг (BS4)',
-    tabGuidance: 'Профорієнтація учня',
-    tabMlLab: 'ML & Тренди',
-    tabDossier: 'Звіт',
+    tabAnalytics: 'Дослідження ринку',
+    tabScraper: 'Парсер сайтів (BS4)',
+    tabGuidance: 'Профорієнтація & CV',
+    tabMlLab: 'ML Лабораторія',
+    heroBadge: 'Аналітика ринку праці • BeautifulSoup4 & NLP',
+    heroTitle: 'Інформаційно-аналітичний портал ринку праці для профорієнтації',
+    heroSubtitle: 'Автоматизований збір вакансій з провідних порталів України, NLP-аналіз вимог роботодавців, порівняння спеціальностей та аудит учнівського резюме.',
 
     // Analytics Dashboard
     professionLabel: 'Професія для аналізу:',
@@ -123,15 +126,17 @@ export const TRANSLATIONS = {
     footerMlLink: 'ML дослідження'
   },
   en: {
-    // Header
-    appTitle: 'Career Guide',
+    // Header & Portal Nav
+    appTitle: 'Career Guide AI',
     appSubtitle: 'Labor Market Analytics',
-    vacanciesCount: 'Jobs',
-    tabAnalytics: 'Analytics',
-    tabScraper: 'Scraping (BS4)',
-    tabGuidance: 'Student Guidance',
-    tabMlLab: 'ML & Trends',
-    tabDossier: 'Report',
+    vacanciesCount: 'Vacancies',
+    tabAnalytics: 'Market Explorer',
+    tabScraper: 'Web Scraper (BS4)',
+    tabGuidance: 'Career & Resume',
+    tabMlLab: 'ML Intelligence Lab',
+    heroBadge: 'Labor Market Intelligence • BeautifulSoup4 & NLP',
+    heroTitle: 'Labor Market Intelligence Portal for Student Guidance',
+    heroSubtitle: 'Automated vacancy collection across major Ukrainian job portals, NLP employer requirement parsing, multi-career differential matching, and student CV audit.',
 
     // Analytics Dashboard
     professionLabel: 'Profession for analysis:',
