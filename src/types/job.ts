@@ -2,7 +2,8 @@ export interface Vacancy {
   id: string;
   title: string;
   company: string;
-  source: 'Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'LinkedIn' | 'Jooble.ua' | 'Custom Scrape';
+  industry?: string;
+  source: 'Work.ua' | 'Robota.ua' | 'OLX Робота' | 'DOU.ua' | 'Djinni' | 'LinkedIn' | 'Jooble.ua' | 'Custom Scrape';
   url?: string;
   city: string;
   isRemote: boolean;

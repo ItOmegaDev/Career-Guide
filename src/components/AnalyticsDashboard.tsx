@@ -44,36 +44,47 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
   const filteredVacancies = useMemo(() => {
     return vacancies.filter(v => {
       const trackKeywords: Record<string, string[]> = {
+        'all': [],
+        'sales-track': ['продаж', 'sales', 'клієнт', 'account', 'crm', 'b2b', 'b2c', 'менеджер'],
+        'finance-track': ['бухгалтер', 'фінанс', 'облік', '1с', 'bas', 'аудит', 'банк', 'економіст'],
+        'logistics-track': ['логіст', 'перевезен', 'склад', 'експедитор', 'lardi', 'cmr', 'ттн', 'wms'],
+        'medicine-track': ['фармацевт', 'лікар', 'медич', 'провізор', 'аптек', 'сестра', 'helsi'],
+        'marketing-track': ['маркетинг', 'smm', 'дизайн', 'контент', 'tiktok', 'reels', 'таргет', 'реклам', 'креатив'],
+        'engineering-track': ['інженер', 'електрик', 'виробництв', 'autocad', 'solidworks', 'чпк', 'монтаж', 'механік'],
+        'education-track': ['викладач', 'вчитель', 'репетитор', 'освіт', 'урок', 'нмт', 'педагог'],
+        'horeca-track': ['бариста', 'готел', 'рецепшн', 'кухар', 'офіціант', 'horeca', 'кава', 'ресторан'],
+        'hr-track': ['hr', 'рекрутер', 'персонал', 'найм', 'hurma', 'recruiter'],
         'ai-ml': ['python', ' ml ', 'machine learning', 'штучний інтелект', 'pandas', ' ai '],
-        'cybersecurity': ['cyber', 'security', 'кібербезпека', ' siem ', 'безпек', ' soc '],
-        'data-analytics': ['data', 'аналітик', 'sql', 'power bi', 'tableau', 'excel'],
-        'frontend': ['frontend', 'react', 'javascript', 'typescript', 'html', 'css'],
-        'robotics': ['embedded', 'c++', 'stm32', 'робототехнік', 'iot', 'мікроконтролер'],
-        'ui-ux': ['ui', 'ux', 'дизайн', 'figma', 'designer']
+        'frontend': ['frontend', 'react', 'javascript', 'typescript', 'html', 'css', 'веб']
       };
 
       const keywords = trackKeywords[selectedTrack] || [];
       const titleLower = ` ${v.title.toLowerCase()} `;
       const descLower = ` ${v.description.toLowerCase()} `;
+      const industryLower = v.industry ? ` ${v.industry.toLowerCase()} ` : '';
       const skillsLower = v.skills.map(s => s.toLowerCase());
 
-      const matchTrack = selectedTrack === 'all' || keywords.some(k => 
-        titleLower.includes(k.trim()) || 
-        descLower.includes(k.trim()) ||
-        skillsLower.some(s => s.includes(k.trim()))
-      );
+      const matchTrack = selectedTrack === 'all' || 
+        (v.industry && currentTrackConfig.title.toLowerCase().includes(v.industry.toLowerCase())) ||
+        keywords.some(k => 
+          titleLower.includes(k.trim()) || 
+          industryLower.includes(k.trim()) ||
+          descLower.includes(k.trim()) ||
+          skillsLower.some(s => s.includes(k.trim()))
+        );
 
       const matchExp = experienceFilter === 'all' || v.experienceLevel === experienceFilter;
       const matchRemote = !remoteOnly || v.isRemote;
       const matchSearch = !searchQuery || (
         v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         v.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (v.industry && v.industry.toLowerCase().includes(searchQuery.toLowerCase())) ||
         v.skills.some(s => s.toLowerCase().includes(searchQuery.toLowerCase()))
       );
 
       return matchTrack && matchExp && matchRemote && matchSearch;
     });
-  }, [vacancies, selectedTrack, experienceFilter, remoteOnly, searchQuery]);
+  }, [vacancies, selectedTrack, experienceFilter, remoteOnly, searchQuery, currentTrackConfig]);
 
   const topHardSkills = useMemo(() => extractTopSkills(filteredVacancies.length > 0 ? filteredVacancies : vacancies), [filteredVacancies, vacancies]);
   const topSoftSkills = useMemo(() => extractTopSoftSkills(filteredVacancies.length > 0 ? filteredVacancies : vacancies), [filteredVacancies, vacancies]);
@@ -399,9 +410,14 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                   />
                   <div className="flex-1 space-y-1">
                     <div className="flex items-baseline justify-between gap-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="text-xs font-semibold text-white">{vac.title}</h4>
-                        <span className="text-[11px] text-slate-500">{vac.source}</span>
+                        {vac.industry && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                            {vac.industry}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-slate-500 font-mono">{vac.source}</span>
                       </div>
                       <span className="text-xs font-medium text-slate-200 shrink-0">
                         {vac.salaryMin ? `${vac.salaryMin.toLocaleString()} – ${vac.salaryMax?.toLocaleString()} ${vac.salaryCurrency}` : t.salaryNotSpecified}

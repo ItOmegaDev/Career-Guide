@@ -112,66 +112,10 @@ function safeParseJson(raw: string | undefined): any {
   }
 }
 
-// In-Memory Data Store for MERN-architecture REST endpoints
-let DB_VACANCIES: any[] = [
-  {
-    id: 'vac-1',
-    title: 'Junior Python / ML Developer (Trainee/Junior)',
-    company: 'Genesis Tech',
-    source: 'DOU.ua',
-    url: 'https://jobs.dou.ua/vacancies/genesis-python-ml',
-    city: 'Київ',
-    isRemote: true,
-    salaryMin: 32000,
-    salaryMax: 48000,
-    salaryCurrency: 'UAH',
-    experienceLevel: 'Junior',
-    description: 'Шукаємо починаючого Python розробника для роботи з алгоритмами машинного навчання, збору та обробки датасетів, парсингу веб-даних за допомогою BeautifulSoup4 та Scrapy, побудови прогнозних моделей на базі PyTorch та scikit-learn.',
-    skills: ['Python', 'Machine Learning', 'BeautifulSoup4', 'Pandas', 'NumPy', 'SQL', 'Git', 'scikit-learn', 'PyTorch', 'FastAPI'],
-    softSkills: ['Аналітичне мислення', 'Уважність до деталей', 'Командна робота', 'Бажання швидко вчитися'],
-    educationRequirement: 'Технічна або математична освіта',
-    englishLevel: 'B1 (Intermediate)',
-    postedDate: '2026-09-28'
-  },
-  {
-    id: 'vac-2',
-    title: 'Data Analyst / Молодший аналітик даних',
-    company: 'Rozetka.ua',
-    source: 'Work.ua',
-    url: 'https://www.work.ua/jobs/rozetka-data-analyst',
-    city: 'Київ',
-    isRemote: true,
-    salaryMin: 28000,
-    salaryMax: 42000,
-    salaryCurrency: 'UAH',
-    experienceLevel: 'Junior',
-    description: 'В команду аналітики електронної комерції потрібен Junior Data Analyst. Завдання: збір вимог, написання SQL-запитів, побудова інтерактивних дашбордів у Power BI/Tableau, статистичний аналіз.',
-    skills: ['SQL', 'PostgreSQL', 'Excel / Google Sheets', 'Power BI', 'Python', 'Tableau', 'Статистика', 'A/B тестування'],
-    softSkills: ['Критичне мислення', 'Презентаційні навички', 'Ініціативність'],
-    educationRequirement: 'Бажано вища (економіка, статистика, кібернетика)',
-    englishLevel: 'A2-B1',
-    postedDate: '2026-09-29'
-  },
-  {
-    id: 'vac-3',
-    title: 'Trainee / Junior Frontend Developer (React, TypeScript)',
-    company: 'SoftServe',
-    source: 'DOU.ua',
-    url: 'https://jobs.dou.ua/vacancies/softserve-react-junior',
-    city: 'Львів',
-    isRemote: true,
-    salaryMin: 25000,
-    salaryMax: 38000,
-    salaryCurrency: 'UAH',
-    experienceLevel: 'Trainee/No Exp',
-    description: 'SoftServe Academy відкриває набір на позицію Trainee Frontend Engineer. Ви навчитесь будувати сучасні веб-додатки з використанням React 19, TypeScript, Tailwind CSS, працювати з REST API та GraphQL.',
-    skills: ['JavaScript', 'TypeScript', 'React', 'HTML5', 'CSS3', 'Tailwind CSS', 'Git', 'REST API', 'Figma'],
-    softSkills: ['Комунікабельність', 'Тайм-менеджмент', 'Самоорганізація'],
-    educationRequirement: 'Розглядаємо учнів випускних класів та студентів',
-    englishLevel: 'B1+ (письмова та розмовна)',
-    postedDate: '2026-09-30'
-  }
-];
+import { INITIAL_VACANCIES } from './src/data/mockVacancies.js';
+
+// In-Memory Data Store for MERN-architecture REST endpoints initialized with all professions
+let DB_VACANCIES: any[] = [...INITIAL_VACANCIES];
 
 let DB_STUDENT_PROFILE: any = {
   name: 'Alex Kovalenko',
@@ -190,11 +134,15 @@ let DB_STUDENT_PROFILE: any = {
 
 // REST API: GET all vacancies with optional search/filter
 app.get('/api/vacancies', (req: Request, res: Response) => {
-  const { search, source, experience, limit } = req.query;
+  const { search, source, experience, industry, limit } = req.query;
   let results = [...DB_VACANCIES];
 
   if (source && typeof source === 'string' && source !== 'all') {
     results = results.filter(v => v.source === source);
+  }
+
+  if (industry && typeof industry === 'string' && industry !== 'all') {
+    results = results.filter(v => v.industry === industry);
   }
 
   if (experience && typeof experience === 'string' && experience !== 'all') {
@@ -206,6 +154,7 @@ app.get('/api/vacancies', (req: Request, res: Response) => {
     results = results.filter(v => 
       v.title.toLowerCase().includes(q) ||
       v.company.toLowerCase().includes(q) ||
+      (v.industry && v.industry.toLowerCase().includes(q)) ||
       v.skills.some((s: string) => s.toLowerCase().includes(q))
     );
   }
@@ -502,22 +451,29 @@ app.post('/api/parse/batch-scrape', async (req: Request, res: Response) => {
   logs.push(`[Конфігурація] Глибина вибірки: ${limitPerSource} карток на кожну пару (сайт, професія).`);
 
   const employersPool: Record<string, string[]> = {
-    'Work.ua': ['Rozetka', 'Prom.ua / EVO', 'Nova Poshta Tech', 'Fozzy Group', 'Comfy Tech', 'Monobank / Fintech Band'],
-    'Robota.ua': ['Preply Ukraine', 'Kyivstar Digital', 'Genesis Tech', 'DataMetrics UA', 'Uklon', 'Ajax Systems'],
-    'DOU.ua': ['SoftServe', 'EPAM Systems', 'Ciklum', 'Intellias', 'MacPaw', 'GlobalLogic', 'Grammarly'],
-    'Djinni': ['Readdle', 'Reface', 'BetterMe', 'Petcube', 'LetyShops', 'Jooble Core', 'Genesis Studio'],
-    'Jooble.ua': ['PrivatBank IT', 'Vodafone Ukraine Tech', 'Avenga', 'Miratech', 'N-iX', 'Sigma Software']
+    'Work.ua': ['Нова Пошта', 'Rozetka', 'АТБ-Маркет', 'Укрпошта', 'ПриватБанк', 'Comfy', 'ДП «Антонов»', 'Fozzy Group', 'Аптека АНЦ'],
+    'Robota.ua': ['Kernel', 'Raben Ukraine', 'Добробут', 'Reikartz Hotel Group', 'Preply', 'Banda Agency', 'Kyivstar', 'Ajax Systems'],
+    'OLX Робота': ['Meest Пошта', 'Епіцентр К', 'Сільпо', 'WOG', 'Укрзалізниця', 'ДТЕК Відновлювана Енергетика'],
+    'DOU.ua': ['SoftServe', 'EPAM Systems', 'Genesis Tech', 'Ciklum', 'Intellias', 'MacPaw', 'GlobalLogic'],
+    'Djinni': ['Readdle', 'Reface', 'BetterMe', 'Petcube', 'Jooble Core', 'Fintech Band'],
+    'Jooble.ua': ['Фармак', 'Аптека АНЦ', 'Monobank', 'Vodafone Ukraine', 'Metinvest', 'Дніпро-М']
   };
 
   const skillsByProf: Record<string, string[]> = {
+    'Менеджер з продажу (B2B/B2C)': ['B2B продажі', 'CRM (Bitrix24)', 'Переговори', 'Ділове листування', 'Excel', 'Презентація продукту'],
+    'Асистент бухгалтера / Економіст': ['1С / BAS Бухгалтерія', 'Первинна документація', 'Excel', 'Податковий облік', 'Фінансовий аналіз'],
+    'Менеджер з логістики': ['Транспортна логістика', 'Lardi-Trans', 'Della', 'CMR / ТТН', 'WMS системи', 'Інкотермс'],
+    'Фармацевт / Асистент лікаря': ['Фармакологія', 'Фармацевтична опіка', 'Касова дисципліна', '1С Аптека', 'Helsi / Doctor Eleks'],
+    'SMM-менеджер / Контент-креатор': ['Meta Ads', 'CapCut / Монтаж', 'Canva / Photoshop', 'Копірайтинг', 'TikTok', 'Google Analytics'],
+    'Інженер-конструктор (AutoCAD)': ['AutoCAD', 'SolidWorks', 'ЕСКД', 'Читання креслень', 'Електробезпека', 'Технічна механіка'],
+    'Викладач / Онлайн-репетитор': ['Шкільна програма', 'Методика викладання', 'Підготовка до НМТ', 'Miro / Zoom', 'Педагогіка'],
+    'Бариста / Адміністратор (HoReCa)': ['Приготування кави', 'Poster POS', 'Стандарти сервісу (HACCP)', 'Opera PMS', 'Лате-арт'],
+    'Junior Recruiter / HR': ['Скринінг резюме', 'ATS системи (HURMA)', 'Проведення інтерв\'ю', 'LinkedIn пошук', 'Трудове право'],
     'Python / AI Developer': ['Python', 'Machine Learning', 'BeautifulSoup4', 'Pandas', 'SQL', 'Git', 'FastAPI', 'PyTorch'],
     'Data Analyst': ['SQL', 'Power BI', 'Python', 'Excel (Advanced)', 'Tableau', 'Статистика', 'Pandas', 'A/B тестування'],
-    'Frontend': ['JavaScript', 'TypeScript', 'React', 'HTML5', 'CSS3', 'Tailwind CSS', 'Git', 'REST API', 'Next.js'],
-    'Cybersecurity': ['Linux', 'Мережі TCP/IP', 'SIEM (Splunk/Elastic)', 'Wireshark', 'Python (скриптинг)', 'Bash', 'OSINT'],
-    'QA Automation': ['Python / Java', 'Selenium / Playwright', 'Postman', 'API REST', 'Jira', 'Git', 'Тест-дизайн', 'SQL'],
-    'DevOps': ['Linux', 'Docker', 'Kubernetes', 'CI/CD (GitHub Actions)', 'Bash', 'AWS / Cloud', 'Git', 'Terraform'],
-    'Embedded / Robotics': ['C', 'C++', 'STM32 / ESP32', 'Мікроконтролери', 'UART / SPI', 'Linux', 'Git', 'Схемотехніка'],
-    'UI/UX Design': ['Figma', 'UI/UX Design', 'Wireframing', 'Design Systems', 'User Research', 'Прототипування']
+    'Frontend Developer': ['JavaScript', 'TypeScript', 'React', 'HTML5', 'CSS3', 'Tailwind CSS', 'Git', 'REST API'],
+    'Cybersecurity': ['Linux', 'Мережі TCP/IP', 'SIEM', 'Wireshark', 'Python (скриптинг)', 'Bash', 'OSINT'],
+    'QA Engineer': ['Теорія тестування', 'Jira / Confluence', 'Postman / REST API', 'SQL', 'Тест-дизайн', 'DevTools']
   };
 
   const extractedVacancies: Array<{

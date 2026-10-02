@@ -23,26 +23,33 @@ export const ScraperStudio: React.FC<ScraperStudioProps> = ({ onAddVacancies, la
   const t = TRANSLATIONS[lang];
   const [subTab, setSubTab] = useState<'batch-parser' | 'single-parser' | 'bs4-methods' | 'selector-tester' | 'python-code'>('batch-parser');
   
-  // Multi-site batch scraping options
-  const allSources: ('Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'Jooble.ua')[] = [
-    'Work.ua', 'Robota.ua', 'DOU.ua', 'Djinni', 'Jooble.ua'
+  // Multi-site batch scraping options covering all professions and top portals
+  const allSources: ('Work.ua' | 'Robota.ua' | 'OLX Робота' | 'DOU.ua' | 'Djinni' | 'Jooble.ua')[] = [
+    'Work.ua', 'Robota.ua', 'OLX Робота', 'DOU.ua', 'Djinni', 'Jooble.ua'
   ];
   const allProfessions = [
+    'Менеджер з продажу (B2B/B2C)',
+    'Асистент бухгалтера / Економіст',
+    'Менеджер з логістики',
+    'Фармацевт / Асистент лікаря',
+    'SMM-менеджер / Контент-креатор',
+    'Інженер-конструктор (AutoCAD)',
+    'Викладач / Онлайн-репетитор',
+    'Бариста / Адміністратор (HoReCa)',
+    'Junior Recruiter / HR',
     'Python / AI Developer',
     'Data Analyst',
-    'Frontend',
-    'Cybersecurity',
-    'QA Automation',
-    'DevOps',
-    'Embedded / Robotics'
+    'Frontend Developer',
+    'QA Engineer'
   ];
 
-  const [selectedSources, setSelectedSources] = useState<('Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'Jooble.ua')[]>([
-    'Work.ua', 'Robota.ua', 'DOU.ua', 'Djinni'
+  const [selectedSources, setSelectedSources] = useState<('Work.ua' | 'Robota.ua' | 'OLX Робота' | 'DOU.ua' | 'Djinni' | 'Jooble.ua')[]>([
+    'Work.ua', 'Robota.ua', 'OLX Робота'
   ]);
   const [selectedProfessions, setSelectedProfessions] = useState<string[]>([
-    'Python / AI Developer',
-    'Data Analyst'
+    'Менеджер з продажу (B2B/B2C)',
+    'Асистент бухгалтера / Економіст',
+    'Менеджер з логістики'
   ]);
   const [scrapeDepth, setScrapeDepth] = useState<number>(3);
   const [isBatchParsing, setIsBatchParsing] = useState(false);
@@ -84,7 +91,7 @@ export const ScraperStudio: React.FC<ScraperStudioProps> = ({ onAddVacancies, la
   const [batchSearchQuery, setBatchSearchQuery] = useState('');
 
   // Toggle and bulk helpers
-  const handleToggleSource = (src: 'Work.ua' | 'Robota.ua' | 'DOU.ua' | 'Djinni' | 'Jooble.ua') => {
+  const handleToggleSource = (src: 'Work.ua' | 'Robota.ua' | 'OLX Робота' | 'DOU.ua' | 'Djinni' | 'Jooble.ua') => {
     setSelectedSources(prev => 
       prev.includes(src) ? prev.filter(s => s !== src) : [...prev, src]
     );
@@ -100,7 +107,7 @@ export const ScraperStudio: React.FC<ScraperStudioProps> = ({ onAddVacancies, la
   };
 
   const handleSelectAllProfessions = () => setSelectedProfessions([...allProfessions]);
-  const handleClearProfessions = () => setSelectedProfessions(['Python / AI Developer']);
+  const handleClearProfessions = () => setSelectedProfessions(['Менеджер з продажу (B2B/B2C)']);
 
   const handleToggleSelectForCompare = (id: string) => {
     setSelectedForCompareIds(prev => 

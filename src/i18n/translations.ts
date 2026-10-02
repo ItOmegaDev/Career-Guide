@@ -13,7 +13,7 @@ export const TRANSLATIONS = {
     tabMlLab: 'ML Лабораторія',
     heroBadge: 'Аналітика ринку праці • BeautifulSoup4 & NLP',
     heroTitle: 'Інформаційно-аналітичний портал ринку праці для профорієнтації',
-    heroSubtitle: 'Автоматизований збір вакансій з провідних порталів України, NLP-аналіз вимог роботодавців, порівняння спеціальностей та аудит учнівського резюме.',
+    heroSubtitle: 'Автоматизований збір вакансій з провідних порталів України за всіма галузями (продажі, логістика, фінанси, медицина, інженерія, IT, сервіс), NLP-аналіз вимог та аудит учнівського резюме.',
 
     // Analytics Dashboard
     professionLabel: 'Професія для аналізу:',
@@ -34,9 +34,9 @@ export const TRANSLATIONS = {
     mentionFrequency: 'Частота згадувань у вакансіях',
     softSkillsTitle: 'Особисті навички (Soft Skills)',
     aiImpactTitle: 'Штучний інтелект на ринку:',
-    aiImpactDefault: 'ШІ автоматизує написання шаблонного коду, підвищуючи цінність розуміння алгоритмів, математики та вміння правильно формулювати технічні завдання.',
+    aiImpactDefault: 'ШІ автоматизує рутинні операції у продажах, аналітиці, програмуванні та документообігу, підвищуючи цінність критичного мислення, адаптивності та практичних навичок.',
     vacanciesTitle: 'Зібрані вакансії',
-    searchPlaceholder: 'Пошук за скілом чи назвою...',
+    searchPlaceholder: 'Пошук за посадою, галуззю чи скілом...',
     allLevels: 'Усі рівні',
     traineeNoExp: 'Trainee / Без досвіду',
     juniorLevel: 'Junior',
@@ -136,7 +136,7 @@ export const TRANSLATIONS = {
     tabMlLab: 'ML Intelligence Lab',
     heroBadge: 'Labor Market Intelligence • BeautifulSoup4 & NLP',
     heroTitle: 'Labor Market Intelligence Portal for Student Guidance',
-    heroSubtitle: 'Automated vacancy collection across major Ukrainian job portals, NLP employer requirement parsing, multi-career differential matching, and student CV audit.',
+    heroSubtitle: 'Automated job collection across all major Ukrainian portals for every industry (Sales, Logistics, Finance, Healthcare, Engineering, IT, Service), NLP employer requirement parsing, and student CV guidance.',
 
     // Analytics Dashboard
     professionLabel: 'Profession for analysis:',
@@ -157,9 +157,9 @@ export const TRANSLATIONS = {
     mentionFrequency: 'Mention frequency in job listings',
     softSkillsTitle: 'Personal Qualities (Soft Skills)',
     aiImpactTitle: 'AI Impact on Market:',
-    aiImpactDefault: 'AI automates boilerplate code generation, placing higher value on algorithmic logic, mathematics, and precise technical specification skills.',
+    aiImpactDefault: 'AI automates repetitive tasks across sales, analytics, coding, and administration, placing a premium on critical thinking, adaptability, and domain mastery.',
     vacanciesTitle: 'Extracted Vacancies',
-    searchPlaceholder: 'Search skill or title...',
+    searchPlaceholder: 'Search title, industry, or skill...',
     allLevels: 'All levels',
     traineeNoExp: 'Trainee / No Experience',
     juniorLevel: 'Junior',

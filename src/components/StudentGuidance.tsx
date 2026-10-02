@@ -33,18 +33,77 @@ export const StudentGuidance: React.FC<StudentGuidanceProps> = ({
   const t = TRANSLATIONS[lang];
 
   const availableProfessions = [
+    'Менеджер з продажу (B2B/B2C)',
+    'Асистент бухгалтера / Економіст',
+    'Менеджер з логістики',
+    'SMM-менеджер / Контент-креатор',
+    'Фармацевт / Асистент лікаря',
+    'Інженер-конструктор (AutoCAD)',
+    'Викладач / Онлайн-репетитор',
+    'Бариста / Сервіс (HoReCa)',
     'Python / AI Developer',
     'Data Analyst',
-    'Frontend',
-    'Cybersecurity Analyst',
-    'QA Automation',
-    'DevOps',
-    'Embedded / Robotics',
-    'UI/UX Design'
+    'Frontend Developer'
   ];
 
-  // Pre-made realistic student CV profiles for 1-click testing
+  // Pre-made realistic student CV profiles across different industries for 1-click testing
   const CV_PRESETS = [
+    {
+      id: 'sales-preset',
+      labelUk: '💼 Продажі / B2B Sales',
+      labelEn: '💼 Sales & Account Management',
+      profile: {
+        name: lang === 'uk' ? 'Максим Бондаренко' : 'Maksym Bondarenko',
+        age: 17,
+        grade: lang === 'uk' ? '11 клас' : '11th Grade',
+        schoolName: lang === 'uk' ? 'Київська гімназія №178' : 'Kyiv Gymnasium #178',
+        favoriteSubjects: lang === 'uk' ? ['Українська мова', 'Англійська мова', 'Економіка'] : ['Ukrainian', 'English', 'Economics'],
+        currentSkills: ['Ділові переговори', 'CRM (Bitrix24)', 'Робота з запереченнями', 'Презентація продукту', 'Excel / Таблиці', 'Грамотна мова'],
+        englishLevel: 'B1 (Intermediate)',
+        interests: lang === 'uk' ? ['B2B продажі', 'Клієнтський сервіс', 'Маркетплейси'] : ['B2B Sales', 'Client Relations', 'E-commerce'],
+        workPreference: 'office' as const,
+        targetProfessions: ['Менеджер з продажу (B2B/B2C)'],
+        resumeText: lang === 'uk'
+          ? `Максим Бондаренко, 17 років. Учень випускного 11 класу.
+Навички: вільне ведення телефонних переговорів, знання базових воронок продажів у CRM, підготовка презентацій у Canva та розрахунків у Google Sheets.
+Досвід:
+1. Консультування клієнтів в інтернет-магазині молодіжного одягу (Instagram Direct / чат).
+2. Організатор шкільного ярмарку благодійного збору для ЗСУ (зібрано понад 45 000 грн).`
+          : `Maksym Bondarenko, 17 years old. 11th-grade student.
+Skills: confident phone negotiations, CRM sales pipelines, presentation design in Canva, commercial calculations in Google Sheets.
+Experience:
+1. Customer support and direct sales for Instagram apparel store.
+2. Chief organizer of school charity fair for Ukrainian defenders (raised over 45,000 UAH).`,
+        githubUrl: '',
+        olympiadAchievements: lang === 'uk' ? 'Призер міського турніру юних економістів' : 'Prize winner in City Young Economists Tournament'
+      }
+    },
+    {
+      id: 'finance-preset',
+      labelUk: '📈 Фінанси та Бухгалтерія',
+      labelEn: '📈 Finance & Accounting Trainee',
+      profile: {
+        name: lang === 'uk' ? 'Олена Кравчук' : 'Olena Kravchuk',
+        age: 17,
+        grade: lang === 'uk' ? '11 клас' : '11th Grade',
+        schoolName: lang === 'uk' ? 'Київський економічний ліцей' : 'Kyiv Economics Lyceum',
+        favoriteSubjects: lang === 'uk' ? ['Алгебра', 'Економіка', 'Правознавство'] : ['Algebra', 'Economics', 'Law'],
+        currentSkills: ['1С / BAS Бухгалтерія', 'Excel (ВПР, зведені таблиці)', 'Первинна документація', 'Фінансовий аналіз'],
+        englishLevel: 'B1 (Intermediate)',
+        interests: lang === 'uk' ? ['Бухгалтерський облік', 'Банкінг', 'Податки'] : ['Accounting', 'Banking', 'Taxation'],
+        workPreference: 'remote' as const,
+        targetProfessions: ['Асистент бухгалтера / Економіст'],
+        resumeText: lang === 'uk'
+          ? `Олена Кравчук, 17 років. Учениця 11 класу економічного профілю.
+Навички: робота в системі 1С:Підприємство, оформлення видаткових накладних та рахунків, складні формули в Excel (VLOOKUP, INDEX/MATCH).
+Досягнення: Дослідницька робота МАН з аналізу фінансових показників малого бізнесу в умовах воєнного стану.`
+          : `Olena Kravchuk, 17 years old. 11th-grade economics student.
+Skills: basic 1C/BAS enterprise software, invoice processing, advanced formulas in Excel (VLOOKUP, Pivot Tables).
+Achievements: JAS research paper on small business financial sustainability.`,
+        githubUrl: '',
+        olympiadAchievements: lang === 'uk' ? 'Переможець обласної олімпіади з економіки' : 'Winner of Regional Economics Olympiad'
+      }
+    },
     {
       id: 'python-ai',
       labelUk: '🐍 Python / AI Trainee',
@@ -75,66 +134,6 @@ Projects:
 Participant in the National Informatics Olympiad and Junior Academy of Sciences research.`,
         githubUrl: 'https://github.com/alex-kovalenko-dev',
         olympiadAchievements: lang === 'uk' ? 'Призер ІІ етапу Всеукраїнської олімпіади з інформатики, секція МАН' : 'Prize winner in National Informatics Olympiad, JAS section'
-      }
-    },
-    {
-      id: 'data-analyst',
-      labelUk: '📊 Data Analyst Trainee',
-      labelEn: '📊 Data Analyst Trainee',
-      profile: {
-        name: lang === 'uk' ? 'Марія Мельник' : 'Maria Melnyk',
-        age: 17,
-        grade: lang === 'uk' ? '11 клас' : '11th Grade',
-        schoolName: lang === 'uk' ? 'Львівський фізико-математичний ліцей' : 'Lviv Physics & Math Lyceum',
-        favoriteSubjects: lang === 'uk' ? ['Теорія ймовірностей', 'Економіка', 'Інформатика'] : ['Statistics', 'Economics', 'Computer Science'],
-        currentSkills: ['SQL (JOIN, GROUP BY, Window)', 'Power BI', 'Excel (Pivot, VLOOKUP)', 'Python (Pandas, Matplotlib)'],
-        englishLevel: 'B2 (Upper-Intermediate)',
-        interests: lang === 'uk' ? ['Бізнес-аналітика', 'Візуалізація даних', 'Фінанси'] : ['Business Intelligence', 'Data Viz', 'Fintech'],
-        workPreference: 'remote' as const,
-        targetProfessions: ['Data Analyst', 'Python / AI Developer'],
-        resumeText: lang === 'uk'
-          ? `Марія Мельник, 17 років. Учениця 11 класу.
-Навички: SQL (PostgreSQL, агрегатні функції, підзапити), Power BI, розширений Excel, базовий Python (Pandas).
-Проєкти:
-1. Дашборд у Power BI для аналізу витрат шкільного бюджету та динаміки успішності.
-2. Дослідницька робота МАН: «Статистичний аналіз трендів заробітних плат в IT України за 2024–2026 роки».`
-          : `Maria Melnyk, 17 years old. 11th-grade student.
-Skills: SQL (PostgreSQL, aggregates, subqueries), Power BI, advanced Excel, basic Python (Pandas).
-Projects:
-1. Power BI interactive dashboard analyzing school department budgets and student performance.
-2. JAS research project: "Statistical Analysis of IT Salary Trends in Ukraine (2024–2026)".`,
-        githubUrl: 'https://github.com/maria-data-analyst',
-        olympiadAchievements: lang === 'uk' ? '1-е місце на міському турнірі юних математиків, секція МАН' : '1st place in City Math Tournament, JAS research'
-      }
-    },
-    {
-      id: 'frontend',
-      labelUk: '🌐 Junior Frontend Dev',
-      labelEn: '🌐 Junior Frontend Dev',
-      profile: {
-        name: lang === 'uk' ? 'Дмитро Шевченко' : 'Dmytro Shevchenko',
-        age: 16,
-        grade: lang === 'uk' ? '10 клас' : '10th Grade',
-        schoolName: lang === 'uk' ? 'Харківський комп\'ютерно-технологічний коледж' : 'Kharkiv Computer Tech College',
-        favoriteSubjects: lang === 'uk' ? ['Веб-технології', 'Дизайн', 'Англійська'] : ['Web Tech', 'Design', 'English'],
-        currentSkills: ['HTML5 / CSS3', 'JavaScript (ES6+)', 'React 19', 'Tailwind CSS', 'Git'],
-        englishLevel: 'B1 (Intermediate)',
-        interests: lang === 'uk' ? ['UI/UX', 'Веб-додатки', 'Інтерактивні інтерфейси'] : ['UI/UX', 'Web Apps', 'Interactive UI'],
-        workPreference: 'remote' as const,
-        targetProfessions: ['Frontend', 'UI/UX Design'],
-        resumeText: lang === 'uk'
-          ? `Дмитро Шевченко, 16 років. Студент 1 курсу коледжу.
-Навички: HTML5, CSS3/Tailwind, JavaScript ES6+, React, робота з REST API, Figma.
-Проєкти:
-1. Сайт-каталог шкільної бібліотеки на React + Tailwind з пошуком книг у реальному часі.
-2. Landing-page для волонтерської ініціативи допомоги переселенцям.`
-          : `Dmytro Shevchenko, 16 years old. 1st-year college student.
-Skills: HTML5, CSS3/Tailwind, JavaScript ES6+, React, REST API integration, Figma.
-Projects:
-1. School library web catalog built with React + Tailwind featuring instant search.
-2. Responsive landing page for community volunteer initiative.`,
-        githubUrl: 'https://github.com/dima-frontend-dev',
-        olympiadAchievements: lang === 'uk' ? 'Учасник хакатону веб-розробників, секція МАН' : 'Web Dev Hackathon participant, JAS section'
       }
     }
   ];
