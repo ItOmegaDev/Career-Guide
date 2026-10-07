@@ -1,6 +1,6 @@
 {
   "name": "Профорієнтатор: Аналітика Ринку Праці та Парсинг Вакансій",
-  "description": "Автономна система живого парсингу ринку праці на Python з BeautifulSoup4: миттєвий збір кожної сторінки Work.ua та Robota.ua у реальному часі без збереження сайтів.",
+  "description": "Автономна система пошуку ринку праці на Python: миттєвий збір кожної сторінки Work.ua та Robota.ua у реальному часі без збереження сайтів.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
