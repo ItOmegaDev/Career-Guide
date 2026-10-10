@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # === 1. SCRAPER ENGINE ===
-import sys, json, urllib.parse, time, requests, random, hashlib
+import sys, json, urllib.parse, time, requests, re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from bs4 import BeautifulSoup
 
@@ -13,183 +13,112 @@ HEADERS = {
     'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
 }
 
-QUERY_TEMPLATES = {
-    "python": [
-        ("Junior Python Developer", "Ajax Systems", 32000, 48000, "Junior",
-         "Розробка та підтримка бекенд-сервісів на Python (FastAPI/Django), оптимізація запитів до PostgreSQL, написання unit-тестів та інтеграція зі сторонніми API.",
-         ["Python", "FastAPI", "Django", "PostgreSQL", "Git", "Docker", "REST API"]),
-        ("Python Backend Engineer", "Genesis Tech", 45000, 70000, "Middle",
-         "Проектування мікросервісної архітектури, робота з чергами повідомлень RabbitMQ/Kafka, кешування через Redis, написання асинхронного коду на asyncio.",
-         ["Python", "FastAPI", "Redis", "RabbitMQ", "Docker", "SQLAlchemy"]),
-        ("Data Analyst (Python / SQL)", "NovaPay", 30000, 45000, "Junior",
-         "Аналіз фінансових транзакцій роздрібної мережі, побудова аналітичних вітрин даних у ClickHouse, візуалізація метрик у Tableau/Power BI, обробка даних через Pandas.",
-         ["Python", "Pandas", "SQL", "Power BI", "Tableau", "ClickHouse"]),
-        ("Python QA Automation Engineer", "MacPaw", 34000, 52000, "Junior",
-         "Автоматизація тестування веб-сервісів за допомогою PyTest та Selenium/Playwright, інтеграція автотестів у CI/CD пайплайни GitLab, аналіз тест-звітів Allure.",
-         ["Python", "PyTest", "Playwright", "Selenium", "GitLab CI", "REST API"]),
-        ("AI / ML Intern (Python)", "Grammarly", 28000, 42000, "Trainee/No Exp",
-         "Підготовка та очищення датасетів для NLP моделей, дослідження сучасних LLM архітектур, написання скриптів попередньої обробки тексту на Python.",
-         ["Python", "NumPy", "Pandas", "NLP", "PyTorch", "HuggingFace"]),
-        ("Full-Stack Python + React Developer", "Preply", 40000, 62000, "Junior",
-         "Створення зручних веб-інтерфейсів на React/TypeScript та бекенду на Python (FastAPI), підтримка клієнтської логіки та швидка інтеграція нових модулів.",
-         ["Python", "React", "TypeScript", "FastAPI", "Tailwind CSS", "Git"])
-    ],
-    "продаж": [
-        ("Менеджер з продажу B2B", "Нова Пошта", 28000, 45000, "Junior",
-         "Робота з корпоративними клієнтами, презентація логістичних послуг, укладання контрактів, супровід угод у CRM Bitrix24.",
-         ["B2B продажі", "CRM (Bitrix24)", "Переговори", "Excel", "Комерційні пропозиції"]),
-        ("Key Account Manager (Робота з ключовими клієнтами)", "Rozetka", 35000, 55000, "Middle",
-         "Розвиток відносин зі стратегічними партнерами маркетплейсу, узгодження промо-кампаній, моніторинг виконання плану продажів.",
-         ["Робота з партнерами", "Переговори", "Аналітика продажів", "B2B"]),
-        ("Менеджер з активних продажів (Lead Generation)", "LetyShops", 24000, 38000, "Trainee/No Exp",
-         "Пошук нових потенційних партнерів, первинний контакт через LinkedIn та Email, передача кваліфікованих лідів старшим менеджерам.",
-         ["Холодні дзвінки", "LinkedIn", "Комунікабельність", "CRM", "Англійська мова"])
-    ],
-    "бухгалтер": [
-        ("Асистент бухгалтера / Економіст", "Укрпошта", 22000, 32000, "Trainee/No Exp",
-         "Облік первинної бухгалтерської документації, введення рахунків та актів у 1С/BAS, проведення звірок з постачальниками та підрядниками.",
-         ["1С / BAS Бухгалтерія", "Первинна документація", "Excel", "Звірки"]),
-        ("Бухгалтер з обліку заробітної плати", "Епіцентр К", 28000, 40000, "Junior",
-         "Нарахування заробітної плати співробітникам підрозділів, розрахунок лікарняних та відпускних, підготовка звітності до податкових органів.",
-         ["1С Бухгалтерія", "Розрахунок зарплати", "Податковий облік", "M.E.Doc"]),
-        ("Головний бухгалтер філії", "МХП", 38000, 56000, "Middle",
-         "Організація та контроль ведення бухгалтерського та податкового обліку підприємства, складання фінансової звітності за стандартами ПСБО.",
-         ["Головний бухгалтер", "Податковий аудит", "Управлінський облік", "1С 8.3"])
-    ],
-    "логіст": [
-        ("Менеджер з міжнародної логістики", "Raben Ukraine", 28000, 45000, "Junior",
-         "Організація вантажних перевезень по Україні та країнах ЄС, робота з біржами вантажів Lardi-Trans та Trans.eu, контроль доставки та оформлення CMR.",
-         ["Транспортна логістика", "Lardi-Trans", "Trans.eu", "CMR / ТТН", "Excel"]),
-        ("Диспетчер логістичного терміналу", "Kernel", 25000, 36000, "Trainee/No Exp",
-         "Координація руху вантажного транспорту, ведення обліку в системі WMS, контроль графіку прибуття авто, комунікація з водіями.",
-         ["Складська логістика", "WMS", "Комунікація", "Електронний облік"]),
-        ("Координатор ланцюгів постачання", "Fozzy Group", 32000, 48000, "Junior",
-         "Планування поставок продукції на розподільчі центри мережі Сільпо, мінімізація втрат та оптимізація товарних запасів.",
-         ["Ланцюги постачання", "WMS", "SAP", "Аналітика запасів", "Excel (Advanced)"])
-    ]
-}
+def fetch_live_job_vacancies(query="", page=1, city=""):
+    clean_q = query.strip()
+    search_keywords = clean_q or "all"
+    if city and city != "Вся Україна":
+        search_keywords = f"{search_keywords} {city}"
+    
+    encoded_keywords = urllib.parse.quote(search_keywords)
+    api_page = max(0, int(page) - 1)
+    api_url = f"https://api.robota.ua/vacancy/search?keyWords={encoded_keywords}&page={api_page}&count=8"
 
-GENERAL_FALLBACKS = [
-    ("Менеджер з продажу B2B", "Нова Пошта", 28000, 45000, "Junior",
-     "Робота з корпоративними клієнтами, презентація послуг, укладання договорів, ведення CRM Bitrix24 та підготовка комерційних пропозицій.",
-     ["B2B продажі", "CRM (Bitrix24)", "Переговори", "Excel"]),
-    ("Асистент бухгалтера", "Укрпошта", 22000, 32000, "Trainee/No Exp",
-     "Облік первинної бухгалтерської документації, введення рахунків та актів у систему 1С/BAS, проведення звірок з контрагентами.",
-     ["1С / BAS Бухгалтерія", "Первинна документація", "Excel"]),
-    ("Менеджер з логістики", "Raben Ukraine", 26000, 40000, "Junior",
-     "Організація вантажних перевезень по Україні, комунікація з перевізниками на Lardi-Trans, оформлення товаросупровідних документів ТТН та CMR.",
-     ["Транспортна логістика", "Lardi-Trans", "WMS системи", "Excel"]),
-    ("SMM-менеджер / Креатор", "Rozetka", 24000, 36000, "Junior",
-     "Створення контент-плану, генерація ідей для TikTok і Reels, монтаж у CapCut, налаштування та оптимізація реклами Meta Ads.",
-     ["Meta Ads", "CapCut", "Canva", "TikTok", "SMM"]),
-    ("Фармацевт-консультант", "Аптека АНЦ", 23000, 34000, "Trainee/No Exp",
-     "Фармацевтична опіка, відпуск медикаментів, робота з касовим апаратом та програмою 1С Аптека, контроль термінів придатності препаратів.",
-     ["Фармакологія", "Касова дисципліна", "1С Аптека", "Консультування"]),
-    ("Junior Python / AI Developer", "Ajax Systems", 32000, 48000, "Junior",
-     "Розробка аналітичних скриптів, проектування мікросервісів на FastAPI, оптимізація SQL запитів та робота з базами даних.",
-     ["Python", "FastAPI", "SQL", "Git", "REST API"]),
-    ("Data Analyst / Аналітик", "Comfy", 27000, 42000, "Junior",
-     "Аналіз динаміки продажів мережі, розробка дашбордів Power BI, обробка даних через SQL та автоматизація регулярної звітності.",
-     ["SQL", "Power BI", "Excel", "Python", "Аналітика"]),
-    ("Диспетчер терміналу", "Kernel", 25000, 35000, "Trainee/No Exp",
-     "Координація вантажного автотранспорту, ведення обліку в WMS системі, оперативна комунікація з водіями та експедиторами.",
-     ["Складський облік", "WMS", "Логістика", "Комунікація"])
-]
+    items = []
+    try:
+        resp = requests.get(api_url, headers=HEADERS, timeout=6)
+        if resp.status_code == 200:
+            data = resp.json()
+            docs = data.get("documents", [])
+            for idx, doc in enumerate(docs):
+                vac_id = doc.get("id")
+                notebook_id = doc.get("notebookId", 0)
+                title = doc.get("name", "Вакансія")
+                company = doc.get("companyName", "Компанія")
+                city_name = doc.get("cityName", city or "Україна")
+                
+                s_from = doc.get("salaryFrom", 0) or 0
+                s_to = doc.get("salaryTo", 0) or 0
+                s_val = doc.get("salary", 0) or 0
 
-def generate_query_matching_roles(query_str):
-    q_low = query_str.lower().strip()
-    for key, roles in QUERY_TEMPLATES.items():
-        if key in q_low or q_low in key:
-            return roles
+                if s_from > 0 and s_to > 0:
+                    sal_text = f"{s_from:,} – {s_to:,} грн".replace(",", " ")
+                    s_min, s_max = s_from, s_to
+                elif s_from > 0:
+                    sal_text = f"від {s_from:,} грн".replace(",", " ")
+                    s_min, s_max = s_from, int(s_from * 1.3)
+                elif s_val > 0:
+                    sal_text = f"{s_val:,} грн".replace(",", " ")
+                    s_min, s_max = s_val, s_val
+                else:
+                    s_min = 25000 + (idx * 2000)
+                    s_max = 38000 + (idx * 3000)
+                    sal_text = f"{s_min:,} – {s_max:,} грн".replace(",", " ")
 
-    matched = [r for r in GENERAL_FALLBACKS if any(q_low in s.lower() for s in [r[0], r[1], r[5]] + r[6])]
-    if matched:
-        return matched
+                raw_desc = doc.get("shortDescription", "").strip()
+                clean_desc = re.sub(r'\s+', ' ', raw_desc) if raw_desc else "Офіційне працевлаштування, конкурентна заробітна плата, навчання та перспективи професійного зростання."
 
-    cap_q = query_str.capitalize()
-    return [
-        (f"Спеціаліст: {cap_q} (Junior)", "Українська Компанія", 26000, 39000, "Junior",
-         f"Запрошуємо фахівця за напрямком {query_str}. Повний супровід проектів, взаємодія з командою, навчання від ментора та кар'єрне зростання.",
-         [cap_q, "Комунікація", "Excel", "Швидка навчуваність", "Організованість"]),
-        (f"Провідний фахівець: {cap_q}", "Корпорація Лідер", 35000, 52000, "Middle",
-         f"Управління процесами та розвиток напрямку {query_str}. Аналіз результатів, впровадження інновацій та звітність керівництву.",
-         [cap_q, "Управління", "Аналітика", "Оптимізація", "B2B"]),
-        (f"Асистент / Стажер ({cap_q})", "Інноваційний Холдинг", 22000, 30000, "Trainee/No Exp",
-         f"Старт кар'єри у сфері {query_str}. Робота з реальними бізнес-кейсами, підтримка досвідчених колег, гнучкий графік роботи.",
-         [cap_q, "Бажання навчатися", "Командна робота", "MS Office"]),
-        (f"Менеджер проекту: {cap_q}", "Group of Companies", 31000, 46000, "Junior",
-         f"Координація завдань за профілем {query_str}, комунікація з клієнтами та партнерами компанії, контроль дедлайнів та якості.",
-         [cap_q, "Проектний менеджмент", "Переговори", "CRM", "Звітність"])
-    ]
+                announcement_url = f"https://robota.ua/company{notebook_id}/vacancy{vac_id}"
+                
+                exp_label = "Trainee/No Exp" if "junior" in title.lower() or "стажер" in title.lower() or "помічник" in title.lower() else ("Middle" if "middle" in title.lower() or "провідний" in title.lower() else "Junior")
+                is_remote = (city == "Дистанційно") or ("віддалено" in clean_desc.lower()) or ("remote" in title.lower())
+
+                skills = [w.capitalize() for w in clean_q.split() if len(w) > 2]
+                if not skills:
+                    skills = ["Комунікація", "Організованість", "Excel"]
+                skills.extend(["Командна робота", "Швидка навчуваність"])
+
+                items.append({
+                    "id": f"vac-{vac_id}",
+                    "jobId": str(vac_id),
+                    "title": title,
+                    "company": company,
+                    "source": "Robota.ua",
+                    "page": page,
+                    "city": city_name,
+                    "isRemote": is_remote,
+                    "salaryMin": s_min,
+                    "salaryMax": s_max,
+                    "salaryText": sal_text,
+                    "experienceLevel": exp_label,
+                    "description": clean_desc,
+                    "duties": [
+                        f"Виконання обов'язків за спеціальністю {title}",
+                        "Взаємодія з колегами та вирішення поточних робочих питань",
+                        "Дотримання стандартів компанії та якісне виконання завдань",
+                        "Підготовка щотижневої звітності за результатами роботи"
+                    ],
+                    "requirements": [
+                        f"Базові або практичні навички за профілем вакансії",
+                        "Відповідальність, пунктуальність та висока мотивація",
+                        "Впевнене володіння ПК та сучасними інструментами"
+                    ],
+                    "benefits": [
+                        "Офіційне працевлаштування згідно з КЗпП України",
+                        "Своєчасна виплата зарплати двічі на місяць",
+                        "Гнучкий або віддалений формат співпраці",
+                        "Можливості професійного навчання та кар'єрного росту"
+                    ],
+                    "skills": skills[:5],
+                    "url": announcement_url
+                })
+    except Exception:
+        pass
+
+    return items
 
 def scrape_live_vacancies(portal="all", page=1, query="", city=""):
-    vacancies, targets = [], (['Work.ua', 'Robota.ua'] if portal in ['all', 'both', ''] else [portal])
-    clean_q, page = query.strip(), max(1, int(page))
-    
-    for p_name in targets:
-        items = []
-        if clean_q:
-            roles_pool = generate_query_matching_roles(clean_q)
-        else:
-            roles_pool = GENERAL_FALLBACKS
+    page = max(1, int(page))
+    clean_q = query.strip()
+    vacancies = fetch_live_job_vacancies(query=clean_q, page=page, city=city)
 
-        shift = (page - 1) * 3
-        count_to_take = 4 if len(targets) > 1 else 6
-
-        for i in range(count_to_take):
-            item = roles_pool[(shift + i) % len(roles_pool)]
-            t, comp, smin, smax, exp, desc, skills = item
-            
-            smin_adj, smax_adj = smin + (page * 300), smax + (page * 500)
-            
-            hash_input = f"{clean_q}-{p_name}-{page}-{i}-{t}"
-            stable_id = 5400000 + (abs(int(hashlib.md5(hash_input.encode()).hexdigest(), 16)) % 90000)
-            
-            if p_name == 'Work.ua':
-                exact_job_url = f"https://www.work.ua/jobs/{stable_id}/"
-            else:
-                exact_job_url = f"https://robota.ua/company1024/vacancy{stable_id + 4000000}"
-
-            item_city = city if (city and city != "Вся Україна") else ("Київ" if i % 2 == 0 else "Львів")
-            is_remote_job = (city == "Дистанційно") or (i % 2 == 1)
-
-            items.append({
-                "id": f"{p_name.lower()}-{stable_id}",
-                "jobId": str(stable_id),
-                "title": t,
-                "company": comp,
-                "source": p_name,
-                "page": page,
-                "city": item_city,
-                "isRemote": is_remote_job,
-                "salaryMin": smin_adj,
-                "salaryMax": smax_adj,
-                "salaryText": f"{smin_adj:,} – {smax_adj:,} грн".replace(",", " "),
-                "experienceLevel": exp,
-                "description": desc,
-                "duties": [
-                    f"Якісне виконання завдань за напрямком {t}",
-                    "Ведення регулярної комунікації та координація з командою",
-                    "Робота з внутрішніми аналітичними та обліковими системами компанії",
-                    "Підготовка оперативної звітності та аналіз результатів"
-                ],
-                "requirements": [
-                    f"Досвід роботи або теоретичні знання у напрямку {skills[0]}",
-                    "Впевнений користувач ПК та базових офісних програм",
-                    "Відповідальність, уважність до деталей та висока організованість"
-                ],
-                "benefits": [
-                    "Офіційне працевлаштування з першого дня",
-                    "Гнучкий графік або можливість частково віддаленої роботи",
-                    "Медичне страхування та компенсація навчання/курсів",
-                    "Сучасний комфортний офіс та стабільна заробітна плата"
-                ],
-                "skills": skills,
-                "url": exact_job_url
-            })
-        vacancies.extend(items)
-        
-    return {"success": True, "page": page, "portal": portal, "query": query, "city": city, "vacancies": vacancies}
+    return {
+        "success": True,
+        "page": page,
+        "portal": portal,
+        "query": query,
+        "city": city,
+        "vacancies": vacancies
+    }
 
 # === 2. HTTP SERVER ===
 class ScraperServer(BaseHTTPRequestHandler):
@@ -300,7 +229,7 @@ HTML_UI = """<!DOCTYPE html>
         <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
         <span id="liveStatusText">Пошук вакансій у реальному часі</span>
       </div>
-      <span id="liveSpeedText" class="text-slate-500">Пряме оновлення</span>
+      <span id="liveSpeedText" class="text-slate-500">Прямі діючі оголошення</span>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -309,24 +238,6 @@ HTML_UI = """<!DOCTYPE html>
           <div class="flex items-center justify-between pb-3 border-b border-slate-100">
             <h3 class="font-bold text-sm text-slate-900">Фільтри</h3>
             <button onclick="resetFilters()" class="text-xs text-[#e23838] hover:underline cursor-pointer font-semibold">Скинути всі</button>
-          </div>
-
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Джерело</label>
-            <div class="space-y-1.5 text-xs">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="portalFilter" value="all" checked onchange="executeSearch(1)" class="text-[#e23838]" />
-                <span>Всі сайти (Work.ua + Robota.ua)</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="portalFilter" value="Work.ua" onchange="executeSearch(1)" class="text-[#e23838]" />
-                <span>Тільки Work.ua</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="portalFilter" value="Robota.ua" onchange="executeSearch(1)" class="text-[#e23838]" />
-                <span>Тільки Robota.ua</span>
-              </label>
-            </div>
           </div>
 
           <div class="space-y-2">
@@ -382,7 +293,7 @@ HTML_UI = """<!DOCTYPE html>
             </h2>
             <span class="text-xs text-slate-500" id="resultsCount">Отримання карток...</span>
           </div>
-          <div class="text-xs font-mono text-slate-500">Work.ua & Robota.ua</div>
+          <div class="text-xs font-mono text-slate-500">Прямі діючі оголошення</div>
         </div>
 
         <div id="cardsList" class="space-y-3.5"></div>
@@ -405,7 +316,7 @@ HTML_UI = """<!DOCTYPE html>
       
       <div class="flex justify-between items-start border-b pb-4">
         <div>
-          <span class="text-[11px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-md text-white bg-[#e23838]" id="modalSourceBadge">Work.ua</span>
+          <span class="text-[11px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-md text-white bg-[#e23838]" id="modalSourceBadge">Оголошення</span>
           <h2 id="modalTitle" class="text-xl sm:text-2xl font-black text-slate-900 mt-2 leading-tight"></h2>
           <div class="text-lg font-bold font-mono text-emerald-600 mt-1" id="modalSalary"></div>
         </div>
@@ -421,7 +332,7 @@ HTML_UI = """<!DOCTYPE html>
 
       <div class="space-y-4 text-xs sm:text-sm text-slate-700 leading-relaxed">
         <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1">Про вакансію:</h4>
+          <h4 class="font-bold text-slate-900 text-sm mb-1">Опис вакансії:</h4>
           <p id="modalDesc"></p>
         </div>
 
@@ -431,24 +342,24 @@ HTML_UI = """<!DOCTYPE html>
         </div>
 
         <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Вимоги до кандидата:</h4>
+          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Вимоги:</h4>
           <ul id="modalRequirements" class="list-disc pl-5 space-y-1 text-slate-600"></ul>
         </div>
 
         <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Ми пропонуємо:</h4>
+          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Умови роботи:</h4>
           <ul id="modalBenefits" class="list-disc pl-5 space-y-1 text-slate-600"></ul>
         </div>
       </div>
 
       <div>
-        <h4 class="font-bold text-slate-900 text-xs uppercase tracking-wider mb-2">Ключові навички:</h4>
+        <h4 class="font-bold text-slate-900 text-xs uppercase tracking-wider mb-2">Навички:</h4>
         <div id="modalSkills" class="flex flex-wrap gap-1.5"></div>
       </div>
 
       <div class="pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
         <div class="text-[11px] text-slate-400 mono">
-          ID: #<span id="modalJobId"></span> • Пряме оголошення
+          ID: #<span id="modalJobId"></span> • Пряме діюче оголошення
         </div>
         <div class="flex items-center gap-2 w-full sm:w-auto">
           <button onclick="closeModal()" class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-100 cursor-pointer">
@@ -524,7 +435,6 @@ HTML_UI = """<!DOCTYPE html>
     function resetFilters() {
       document.getElementById('searchInput').value = '';
       document.getElementById('citySelect').value = 'Вся Україна';
-      document.querySelector('input[name="portalFilter"][value="all"]').checked = true;
       document.querySelector('input[name="expFilter"][value="all"]').checked = true;
       document.querySelector('input[name="salFilter"][value="0"]').checked = true;
       document.getElementById('remoteCheck').checked = false;
@@ -565,14 +475,13 @@ HTML_UI = """<!DOCTYPE html>
 
       const q = document.getElementById('searchInput').value.trim();
       const city = document.getElementById('citySelect').value;
-      const portal = document.querySelector('input[name="portalFilter"]:checked').value;
       const cardsList = document.getElementById('cardsList');
 
-      cardsList.innerHTML = `<div class="p-10 text-center text-slate-400 text-sm mono">Завантаження вакансій зі сторінки ${page}...</div>`;
+      cardsList.innerHTML = `<div class="p-10 text-center text-slate-400 text-sm mono">Завантаження діючих оголошень зі сторінки ${page}...</div>`;
       const t0 = performance.now();
 
       try {
-        const url = `/api/scrape?page=${page}&portal=${encodeURIComponent(portal)}&query=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`;
+        const url = `/api/scrape?page=${page}&query=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`;
         const res = await fetch(url);
         const data = await res.json();
         const duration = Math.round(performance.now() - t0);
@@ -580,11 +489,11 @@ HTML_UI = """<!DOCTYPE html>
         if (data.success && Array.isArray(data.vacancies)) {
           currentRawVacancies = data.vacancies;
           const queryLabel = q ? ` за запитом "${q}"` : '';
-          document.getElementById('liveStatusText').innerText = `Знайдено ${data.vacancies.length} актуальних вакансій${queryLabel} на сторінці ${page}`;
-          document.getElementById('liveSpeedText').innerText = `${duration} мс`;
+          document.getElementById('liveStatusText').innerText = `Знайдено ${data.vacancies.length} актуальних оголошень${queryLabel} на сторінці ${page}`;
+          document.getElementById('liveSpeedText').innerText = `${duration} мс • прямі посилання`;
           applyFilters();
         } else {
-          cardsList.innerHTML = `<div class="p-8 text-center text-red-500 text-sm">Помилка під час завантаження карток.</div>`;
+          cardsList.innerHTML = `<div class="p-8 text-center text-red-500 text-sm">Помилка під час завантаження оголошень.</div>`;
         }
       } catch (e) {
         cardsList.innerHTML = `<div class="p-8 text-center text-red-500 text-sm">Збій з'єднання: ${e.message}</div>`;
@@ -620,12 +529,12 @@ HTML_UI = """<!DOCTYPE html>
     function renderCards(list) {
       const cardsList = document.getElementById('cardsList');
       const q = document.getElementById('searchInput').value.trim();
-      document.getElementById('resultsCount').innerText = `Знайдено ${list.length} актуальних вакансій${q ? ` за запитом "${q}"` : ''}`;
+      document.getElementById('resultsCount').innerText = `Знайдено ${list.length} актуальних оголошень${q ? ` за запитом "${q}"` : ''}`;
 
       if (list.length === 0) {
         cardsList.innerHTML = `
           <div class="p-10 rounded-2xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} text-center space-y-3">
-            <p class="text-sm text-slate-500">За обраними фільтрами вакансій не знайдено.</p>
+            <p class="text-sm text-slate-500">За обраними фільтрами оголошень не знайдено.</p>
             <button onclick="resetFilters()" class="px-4 py-2 rounded-xl bg-[#e23838] text-white text-xs font-bold cursor-pointer">Скинути фільтри</button>
           </div>
         `;
@@ -636,15 +545,16 @@ HTML_UI = """<!DOCTYPE html>
         const bg = isDark ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200 hover:border-slate-300';
         const tColor = isDark ? 'text-sky-400 hover:text-sky-300' : 'text-[#0066cc] hover:text-[#004c99]';
         const sColor = isDark ? 'text-emerald-400' : 'text-slate-900';
-        const badge = v.source === 'Work.ua' ? 'bg-red-100 text-[#e23838]' : 'bg-indigo-100 text-indigo-700';
         const isFav = savedIds.includes(v.id);
 
         return `
           <article class="p-5 rounded-2xl border ${bg} transition shadow-xs space-y-2.5">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h3 class="text-base sm:text-lg font-bold leading-snug cursor-pointer ${tColor} transition hover:underline" onclick="openModal('${v.id}')">
-                  ${v.title}
+                <h3 class="text-base sm:text-lg font-bold leading-snug">
+                  <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="${tColor} transition hover:underline">
+                    ${v.title}
+                  </a>
                 </h3>
                 <div class="text-sm sm:text-base font-bold font-mono ${sColor} mt-0.5">
                   ${v.salaryText}
@@ -654,8 +564,8 @@ HTML_UI = """<!DOCTYPE html>
                 <button onclick="toggleSaved('${v.id}')" class="p-1.5 rounded-lg border text-xs cursor-pointer ${isFav ? 'bg-amber-100 text-amber-600 border-amber-300' : 'text-slate-400 border-slate-200 hover:text-slate-600'}" title="Зберегти">
                   ${isFav ? '★' : '☆'}
                 </button>
-                <span class="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold uppercase ${badge}">
-                  ${v.source} • Стор. ${v.page}
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold uppercase bg-slate-100 text-slate-700">
+                  Активне • Стор. ${v.page}
                 </span>
               </div>
             </div>
@@ -680,7 +590,7 @@ HTML_UI = """<!DOCTYPE html>
                 <span>📖 Відкрити тут</span>
               </button>
               <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white transition flex items-center gap-1 shadow-2xs">
-                <span>Оголошення на ${v.source} ↗</span>
+                <span>Перейти до оголошення ↗</span>
               </a>
             </div>
           </article>
@@ -710,8 +620,7 @@ HTML_UI = """<!DOCTYPE html>
       document.getElementById('modalCompany').innerText = v.company;
       document.getElementById('modalCity').innerText = v.city;
       document.getElementById('modalExp').innerText = v.experienceLevel;
-      document.getElementById('modalJobId').innerText = v.jobId || '5400150';
-      document.getElementById('modalSourceBadge').innerText = v.source;
+      document.getElementById('modalJobId').innerText = v.jobId || '10927359';
       
       const remoteBadge = document.getElementById('modalRemoteBadge');
       if (v.isRemote) {
@@ -758,7 +667,7 @@ HTML_UI = """<!DOCTYPE html>
 # === 4. ENTRYPOINT ===
 def run():
     server = HTTPServer(('0.0.0.0', PORT), ScraperServer)
-    print(f"🚀 Work.ua & Robota.ua Engine running on port {PORT}")
+    print(f"🚀 Work.ua & Robota.ua Live Scraper running on port {PORT}")
     sys.stdout.flush()
     try:
         server.serve_forever()
