@@ -1,10 +1,61 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import json, re, urllib.parse, urllib.request
+"""
+Профорієнтатор: Пошук вакансій та аналітика ринку праці України.
+Підтримує роботу з BeautifulSoup, захист від 403 Forbidden (Cloudflare WAF)
+та резервне джерело збору даних.
+"""
+
+import json, re, urllib.parse, urllib.request, ssl
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
+# Підключення BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+    HAS_BS4 = True
+except ImportError:
+    BeautifulSoup = None
+    HAS_BS4 = False
+
 PORT = 3000
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'application/json'}
+
+# Повні заголовки реального браузера для захисту від блокування Cloudflare WAF (HTTP 403)
+BROWSER_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Referer': 'https://robota.ua/',
+    'Origin': 'https://robota.ua',
+    'Sec-Ch-Ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-site'
+}
+
+HTML_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
+}
+
+SSL_CTX = ssl.create_default_context()
+SSL_CTX.check_hostname = False
+SSL_CTX.verify_mode = ssl.CERT_NONE
+
+def clean_html_text(raw_text):
+    """Очищує HTML-розмітку за допомогою BeautifulSoup або regex."""
+    if not raw_text:
+        return ""
+    if HAS_BS4 and BeautifulSoup:
+        try:
+            return BeautifulSoup(raw_text, "html.parser").get_text(separator=" ").strip()
+        except Exception:
+            pass
+    text = re.sub(r'<[^>]+>', ' ', raw_text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return re.sub(r'^(Опис вакансії[:\s]*)+', '', text, flags=re.IGNORECASE).strip()
 
 def build_vacancy_url(vac_id, notebook_id=0):
     nb_id = int(notebook_id or 0)
@@ -22,46 +73,136 @@ def parse_salary(doc):
         return s_val, s_val, f"{s_val:,} грн".replace(",", " ")
     return 0, 0, "За домовленістю"
 
-def fetch_vacancies(query="", page=1, city=""):
+def fetch_robota_api(query, page, city):
+    """Запитує вакансії з Robota.ua з повними заголовками браузера."""
     clean_q = query.strip()
     kw = f"{clean_q or 'all'} {city}".strip() if city and city != "Вся Україна" else (clean_q or "all")
     api_url = f"https://api.robota.ua/vacancy/search?keyWords={urllib.parse.quote(kw)}&page={max(0, int(page)-1)}&count=10"
 
+    req = urllib.request.Request(api_url, headers=BROWSER_HEADERS)
+    with urllib.request.urlopen(req, context=SSL_CTX, timeout=5) as resp:
+        docs = json.loads(resp.read().decode('utf-8')).get("documents", [])
+        items = []
+        for doc in docs:
+            vid = doc.get("id")
+            if not vid: continue
+            title = (doc.get("name") or "Вакансія").strip()
+            comp = (doc.get("companyName") or "Компанія").strip()
+            s_min, s_max, s_text = parse_salary(doc)
+            desc = clean_html_text(doc.get("shortDescription", "")) or "Офіційне працевлаштування та професійний розвиток."
+
+            t_low = title.lower()
+            exp = "Без досвіду / Junior" if any(x in t_low for x in ["junior", "стажер", "помічник", "trainee"]) else ("Middle" if "middle" in t_low else "Junior")
+            remote = (city == "Дистанційно") or ("віддалено" in desc.lower()) or ("remote" in t_low)
+
+            skills = [w.capitalize() for w in clean_q.split() if len(w) > 2] or ["Комунікація", "Організованість", "Excel"]
+            skills.extend(["Командна робота", "Швидка навчуваність"])
+
+            items.append({
+                "id": f"vac-{vid}", "jobId": str(vid), "title": title, "company": comp,
+                "city": doc.get("cityName") or (city if city != "Вся Україна" else "Україна"),
+                "page": page, "isRemote": remote, "salaryMin": s_min, "salaryMax": s_max, "salaryText": s_text,
+                "experienceLevel": exp, "description": desc, "skills": skills[:5],
+                "url": build_vacancy_url(vid, doc.get("notebookId")), "source": "Robota.ua",
+                "duties": [f"Виконання завдань за посадою «{title}»", "Взаємодія з командою для досягнення цілей", "Дотримання стандартів компанії"],
+                "requirements": ["Відповідальність та висока мотивація", "Впевнені навички роботи з ПК", "Швидка навчуваність"],
+                "benefits": ["Офіційне працевлаштування", "Своєчасна виплата зарплати", "Гнучкий або віддалений формат співпраці"]
+            })
+        return items
+
+def scrape_fallback_bs4(query, page, city):
+    """Резервний парсер на BeautifulSoup (DOU.ua), якщо Robota.ua блокується 403."""
+    clean_q = query.strip() or "Python"
+    params = {'search': clean_q}
+    if city and city != "Вся Україна" and city != "Дистанційно":
+        params['city'] = city
+    url = f"https://jobs.dou.ua/vacancies/?{urllib.parse.urlencode(params)}"
+
+    req = urllib.request.Request(url, headers=HTML_HEADERS)
+    with urllib.request.urlopen(req, context=SSL_CTX, timeout=5) as resp:
+        html = resp.read().decode('utf-8', errors='ignore')
+
     items = []
+    if HAS_BS4 and BeautifulSoup:
+        soup = BeautifulSoup(html, "html.parser")
+        cards = soup.find_all("li", class_="l-vacancy")
+        for idx, card in enumerate(cards):
+            t_tag = card.find("a", class_="vt")
+            if not t_tag: continue
+            title = t_tag.get_text(strip=True)
+            link = t_tag.get("href", "")
+
+            c_tag = card.find("a", class_="company")
+            comp = c_tag.get_text(strip=True) if c_tag else "Компанія"
+
+            s_tag = card.find("span", class_="salary")
+            sal_text = s_tag.get_text(strip=True) if s_tag else "За домовленістю"
+
+            loc_tag = card.find("span", class_="cities")
+            loc = loc_tag.get_text(strip=True) if loc_tag else (city if city != "Вся Україна" else "Україна")
+
+            d_tag = card.find("div", class_="sh-info")
+            desc = d_tag.get_text(separator=" ", strip=True) if d_tag else ""
+
+            t_low = title.lower()
+            exp = "Без досвіду / Junior" if any(x in t_low for x in ["junior", "trainee", "помічник"]) else ("Middle" if "middle" in t_low else "Junior")
+            remote = ("віддалено" in desc.lower()) or ("remote" in t_low) or (city == "Дистанційно")
+
+            items.append({
+                "id": f"dou-{idx}-{page}", "jobId": f"dou-{idx}", "title": title, "company": comp,
+                "city": loc, "page": page, "isRemote": remote, "salaryMin": 0, "salaryMax": 0, "salaryText": sal_text,
+                "experienceLevel": exp, "description": desc or "Деталі вакансії та вимоги зазначені в повному оголошенні.",
+                "skills": [w.capitalize() for w in clean_q.split() if len(w) > 2] + ["Командна робота", "Комунікація"],
+                "url": link, "source": "DOU (BeautifulSoup)",
+                "duties": [f"Виконання обов'язків за профілем «{title}»", "Робота у професійній команді", "Участь у розробці та впровадженні рішень"],
+                "requirements": ["Відповідний практичний досвід", "Уважність до деталей та проактивність", "Готовність до розвитку"],
+                "benefits": ["Офіційні виплати та соціальний пакет", "Гнучкий графік / Remote", "Професійний розвиток"]
+            })
+    else:
+        # Regex fallback якщо BeautifulSoup ще не встановлений
+        raw_cards = re.findall(r'<li class="l-vacancy"[^>]*>(.*?)</li>', html, re.DOTALL)
+        for idx, card in enumerate(raw_cards):
+            m_t = re.search(r'<a class="vt" href="([^"]+)"[^>]*>(.*?)</a>', card)
+            if not m_t: continue
+            link, title = m_t.group(1), re.sub(r'<[^>]+>', '', m_t.group(2)).strip()
+            m_c = re.search(r'<a class="company"[^>]*>(.*?)</a>', card, re.DOTALL)
+            comp = re.sub(r'<[^>]+>', '', m_c.group(1)).replace('&nbsp;', ' ').strip() if m_c else "Компанія"
+            m_s = re.search(r'<span class="salary"[^>]*>([^<]+)</span>', card)
+            sal_text = m_s.group(1).strip() if m_s else "За домовленістю"
+            m_loc = re.search(r'<span class="cities[^"]*"[^>]*>([^<]+)</span>', card)
+            loc = m_loc.group(1).strip() if m_loc else (city if city != "Вся Україна" else "Україна")
+            m_d = re.search(r'<div class="sh-info"[^>]*>(.*?)</div>', card, re.DOTALL)
+            desc = re.sub(r'<[^>]+>', '', m_d.group(1)).strip() if m_d else ""
+
+            items.append({
+                "id": f"dou-{idx}-{page}", "jobId": f"dou-{idx}", "title": title, "company": comp,
+                "city": loc, "page": page, "isRemote": city == "Дистанційно", "salaryMin": 0, "salaryMax": 0,
+                "salaryText": sal_text, "experienceLevel": "Junior", "description": desc,
+                "skills": ["Комунікація", "Командна робота"], "url": link, "source": "DOU",
+                "duties": [f"Виконання завдань за посадою «{title}»"],
+                "requirements": ["Базові навички за спеціальністю"],
+                "benefits": ["Офіційне працевлаштування"]
+            })
+
+    return items[:10]
+
+def fetch_vacancies(query="", page=1, city=""):
+    """Надійне отримання вакансій: спочатку Robota.ua, при 403 Forbidden - автоматичний перехід на BeautifulSoup."""
     try:
-        req = urllib.request.Request(api_url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            docs = json.loads(resp.read().decode('utf-8')).get("documents", [])
-            for doc in docs:
-                vid = doc.get("id")
-                if not vid: continue
-                title = (doc.get("name") or "Вакансія").strip()
-                comp = (doc.get("companyName") or "Компанія").strip()
-                s_min, s_max, s_text = parse_salary(doc)
-
-                desc = re.sub(r'^(Опис вакансії[:\s]*)+', '', re.sub(r'\s+', ' ', doc.get("shortDescription", "") or "").strip(), flags=re.IGNORECASE)
-                if not desc: desc = "Офіційне працевлаштування, перспективи професійного та кар'єрного зростання."
-
-                t_low = title.lower()
-                exp = "Без досвіду / Junior" if any(x in t_low for x in ["junior", "стажер", "помічник", "trainee"]) else ("Middle" if "middle" in t_low else "Junior")
-                remote = (city == "Дистанційно") or ("віддалено" in desc.lower()) or ("remote" in t_low)
-
-                skills = [w.capitalize() for w in clean_q.split() if len(w) > 2] or ["Комунікація", "Організованість", "Excel"]
-                skills.extend(["Командна робота", "Швидка навчуваність"])
-
-                items.append({
-                    "id": f"vac-{vid}", "jobId": str(vid), "title": title, "company": comp,
-                    "city": doc.get("cityName") or (city if city != "Вся Україна" else "Україна"),
-                    "page": page, "isRemote": remote, "salaryMin": s_min, "salaryMax": s_max, "salaryText": s_text,
-                    "experienceLevel": exp, "description": desc, "skills": skills[:5],
-                    "url": build_vacancy_url(vid, doc.get("notebookId")),
-                    "duties": [f"Виконання завдань за посадою «{title}»", "Взаємодія з командою для досягнення цілей", "Дотримання стандартів якості компанії"],
-                    "requirements": ["Відповідальність та висока мотивація", "Впевнені навички роботи з ПК", "Готовність швидко навчатися"],
-                    "benefits": ["Офіційне працевлаштування та соціальні гарантії", "Своєчасна виплата зарплати", "Гнучкий графік або віддалена робота"]
-                })
+        results = fetch_robota_api(query, page, city)
+        if results:
+            return results
     except Exception as e:
-        print(f"[Error] {e}")
-    return items
+        print(f"[Robota.ua Notice] {e}. Switching to BeautifulSoup live scraper...")
+
+    try:
+        fallback_results = scrape_fallback_bs4(query, page, city)
+        if fallback_results:
+            return fallback_results
+    except Exception as e:
+        print(f"[BeautifulSoup Fallback Error] {e}")
+
+    return []
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -78,7 +219,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps({"success": True, "vacancies": data}, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps({"success": True, "vacancies": data, "bs4_enabled": HAS_BS4}, ensure_ascii=False).encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()
@@ -135,6 +276,7 @@ HTML_UI = """<!DOCTYPE html>
       <div class="flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs overflow-x-auto">
         <span class="text-slate-400">Швидкий пошук:</span>
         <button onclick="setQuery('Python')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Python</button>
+        <button onclick="setQuery('JavaScript')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">JavaScript</button>
         <button onclick="setQuery('Бухгалтер')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Бухгалтер</button>
         <button onclick="setQuery('Менеджер')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Менеджер</button>
         <button onclick="document.getElementById('citySelect').value='Дистанційно'; executeSearch(1)" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Дистанційно</button>
@@ -142,7 +284,7 @@ HTML_UI = """<!DOCTYPE html>
     </div>
 
     <div class="p-3 rounded-xl bg-slate-900 text-slate-300 border border-slate-800 text-xs mono flex justify-between">
-      <div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-emerald-400"></span><span id="liveStatusText">Пошук діючих вакансій</span></div>
+      <div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span><span id="liveStatusText">Пошук діючих вакансій</span></div>
       <span id="liveSpeedText" class="text-slate-400">Прямі посилання на повні оголошення</span>
     </div>
 
@@ -189,7 +331,8 @@ HTML_UI = """<!DOCTYPE html>
     <div class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 my-8 max-h-[90vh] overflow-y-auto">
       <div class="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3">
         <div>
-          <h2 id="modalTitle" class="text-xl font-bold leading-tight"></h2>
+          <span class="text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold bg-[#e23838] text-white" id="modalSourceBadge">Вакансія</span>
+          <h2 id="modalTitle" class="text-xl font-bold leading-tight mt-1.5"></h2>
           <div id="modalSalary" class="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-0.5"></div>
         </div>
         <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-1 text-xl font-bold cursor-pointer">✕</button>
@@ -322,7 +465,10 @@ HTML_UI = """<!DOCTYPE html>
                 </h3>
                 <div class="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400">${v.salaryText}</div>
               </div>
-              <button onclick="toggleSaved('${v.id}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs cursor-pointer ${isFav ? 'bg-amber-100 text-amber-600' : 'text-slate-400'}">${isFav ? '★' : '☆'}</button>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button onclick="toggleSaved('${v.id}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs cursor-pointer ${isFav ? 'bg-amber-100 text-amber-600' : 'text-slate-400'}">${isFav ? '★' : '☆'}</button>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">${v.source || 'Вакансія'}</span>
+              </div>
             </div>
             <div class="flex flex-wrap gap-x-3 text-xs text-slate-500">
               <span class="font-semibold text-slate-700 dark:text-slate-300">🏢 ${v.company}</span>
@@ -331,7 +477,7 @@ HTML_UI = """<!DOCTYPE html>
               <span class="mono">${v.experienceLevel}</span>
             </div>
             <p class="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">${v.description}</p>
-            <div class="flex flex-wrap gap-1">${v.skills.map(s => `<span class="px-2 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${s}</span>`).join('')}</div>
+            <div class="flex flex-wrap gap-1">${(v.skills || []).map(s => `<span class="px-2 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${s}</span>`).join('')}</div>
             <div class="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
               <button onclick="openModal('${v.id}')" class="font-bold text-[#e23838] hover:underline cursor-pointer">📖 Опис вакансії</button>
               <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-lg font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white shadow-2xs">Перейти до оголошення ↗</a>
@@ -358,9 +504,10 @@ HTML_UI = """<!DOCTYPE html>
       document.getElementById('modalCity').innerText = v.city;
       document.getElementById('modalExp').innerText = v.experienceLevel;
       document.getElementById('modalDesc').innerText = v.description;
-      document.getElementById('modalDuties').innerHTML = v.duties.map(d => `<li>${d}</li>`).join('');
-      document.getElementById('modalRequirements').innerHTML = v.requirements.map(r => `<li>${r}</li>`).join('');
-      document.getElementById('modalSkills').innerHTML = v.skills.map(s => `<span class="px-2.5 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-800 font-medium">${s}</span>`).join('');
+      document.getElementById('modalSourceBadge').innerText = v.source || 'Вакансія';
+      document.getElementById('modalDuties').innerHTML = (v.duties || []).map(d => `<li>${d}</li>`).join('');
+      document.getElementById('modalRequirements').innerHTML = (v.requirements || []).map(r => `<li>${r}</li>`).join('');
+      document.getElementById('modalSkills').innerHTML = (v.skills || []).map(s => `<span class="px-2.5 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-800 font-medium">${s}</span>`).join('');
       document.getElementById('modalDirectLink').href = v.url;
       document.getElementById('jobModal').classList.remove('hidden');
     }
@@ -378,7 +525,7 @@ HTML_UI = """<!DOCTYPE html>
 def run():
     class Srv(ThreadingHTTPServer): allow_reuse_address = True
     server = Srv(('0.0.0.0', PORT), Handler)
-    print(f"🚀 Started on port {PORT}")
+    print(f"🚀 Started on port {PORT} (BeautifulSoup: {'active' if HAS_BS4 else 'fallback regex'})")
     try: server.serve_forever()
     except KeyboardInterrupt: server.server_close()
 
