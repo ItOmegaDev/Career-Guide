@@ -1,39 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Профорієнтатор: Пошук вакансій та аналітика ринку праці України
-Працює виключно на стандартній бібліотеці Python (без зовнішніх залежностей).
-"""
-
-import json
-import re
-import urllib.parse
-import urllib.request
-from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+import json, re, urllib.parse, urllib.request
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 PORT = 3000
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
-}
+HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'application/json'}
 
 def build_vacancy_url(vac_id, notebook_id=0):
-    """Генерує пряме посилання на повне оголошення вакансії на Robota.ua."""
-    try:
-        nb_id = int(notebook_id or 0)
-    except (ValueError, TypeError):
-        nb_id = 0
-    if nb_id > 0:
-        return f"https://robota.ua/company{nb_id}/vacancy{vac_id}"
-    return f"https://robota.ua/vacancy/{vac_id}"
+    nb_id = int(notebook_id or 0)
+    return f"https://robota.ua/company{nb_id}/vacancy{vac_id}" if nb_id > 0 else f"https://robota.ua/vacancy/{vac_id}"
 
 def parse_salary(doc):
-    """Визначає діапазон зарплати та людинозрозумілий текст."""
-    s_from = int(doc.get("salaryFrom") or 0)
-    s_to = int(doc.get("salaryTo") or 0)
-    s_val = int(doc.get("salary") or 0)
-
+    s_from, s_to, s_val = int(doc.get("salaryFrom") or 0), int(doc.get("salaryTo") or 0), int(doc.get("salary") or 0)
     if s_from > 0 and s_to > 0:
         return s_from, s_to, f"{s_from:,} – {s_to:,} грн".replace(",", " ")
     if s_from > 0:
@@ -44,500 +22,261 @@ def parse_salary(doc):
         return s_val, s_val, f"{s_val:,} грн".replace(",", " ")
     return 0, 0, "За домовленістю"
 
-def fetch_live_job_vacancies(query="", page=1, city=""):
-    """Отримує актуальні вакансії через публічний API robota.ua."""
+def fetch_vacancies(query="", page=1, city=""):
     clean_q = query.strip()
-    search_keywords = clean_q or "all"
-    if city and city != "Вся Україна":
-        search_keywords = f"{search_keywords} {city}"
-
-    api_page = max(0, int(page) - 1)
-    encoded_keywords = urllib.parse.quote(search_keywords)
-    api_url = f"https://api.robota.ua/vacancy/search?keyWords={encoded_keywords}&page={api_page}&count=10"
+    kw = f"{clean_q or 'all'} {city}".strip() if city and city != "Вся Україна" else (clean_q or "all")
+    api_url = f"https://api.robota.ua/vacancy/search?keyWords={urllib.parse.quote(kw)}&page={max(0, int(page)-1)}&count=10"
 
     items = []
     try:
         req = urllib.request.Request(api_url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=6) as response:
-            if response.status == 200:
-                raw_bytes = response.read()
-                data = json.loads(raw_bytes.decode('utf-8'))
-                docs = data.get("documents", [])
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            docs = json.loads(resp.read().decode('utf-8')).get("documents", [])
+            for doc in docs:
+                vid = doc.get("id")
+                if not vid: continue
+                title = (doc.get("name") or "Вакансія").strip()
+                comp = (doc.get("companyName") or "Компанія").strip()
+                s_min, s_max, s_text = parse_salary(doc)
 
-                for doc in docs:
-                    vac_id = doc.get("id")
-                    if not vac_id:
-                        continue
+                desc = re.sub(r'^(Опис вакансії[:\s]*)+', '', re.sub(r'\s+', ' ', doc.get("shortDescription", "") or "").strip(), flags=re.IGNORECASE)
+                if not desc: desc = "Офіційне працевлаштування, перспективи професійного та кар'єрного зростання."
 
-                    title = (doc.get("name") or "Вакансія").strip()
-                    company = (doc.get("companyName") or "Компанія").strip()
-                    city_name = doc.get("cityName") or (city if city != "Вся Україна" else "Україна")
-                    notebook_id = doc.get("notebookId") or 0
+                t_low = title.lower()
+                exp = "Без досвіду / Junior" if any(x in t_low for x in ["junior", "стажер", "помічник", "trainee"]) else ("Middle" if "middle" in t_low else "Junior")
+                remote = (city == "Дистанційно") or ("віддалено" in desc.lower()) or ("remote" in t_low)
 
-                    s_min, s_max, sal_text = parse_salary(doc)
+                skills = [w.capitalize() for w in clean_q.split() if len(w) > 2] or ["Комунікація", "Організованість", "Excel"]
+                skills.extend(["Командна робота", "Швидка навчуваність"])
 
-                    raw_desc = doc.get("shortDescription", "").strip()
-                    clean_desc = re.sub(r'\s+', ' ', raw_desc) if raw_desc else "Офіційне працевлаштування, перспективи професійного та кар'єрного зростання."
-                    # Очищення від типових залишків "Опис вакансії" на початку опису
-                    clean_desc = re.sub(r'^(Опис вакансії[:\s]*)+', '', clean_desc, flags=re.IGNORECASE).strip()
-
-                    announcement_url = build_vacancy_url(vac_id, notebook_id)
-
-                    title_lower = title.lower()
-                    if any(w in title_lower for w in ["junior", "стажер", "помічник", "trainee", "асистент"]):
-                        exp_label = "Без досвіду / Junior"
-                    elif any(w in title_lower for w in ["senior", "lead", "провідний", "керівник"]):
-                        exp_label = "Senior / Lead"
-                    elif any(w in title_lower for w in ["middle", "спеціаліст"]):
-                        exp_label = "Middle"
-                    else:
-                        exp_label = "Junior"
-
-                    is_remote = (city == "Дистанційно") or ("віддалено" in clean_desc.lower()) or ("remote" in title_lower)
-
-                    skills = [w.capitalize() for w in clean_q.split() if len(w) > 2]
-                    if not skills:
-                        skills = ["Комунікація", "Організованість", "Excel"]
-                    skills.extend(["Командна робота", "Швидка навчуваність"])
-
-                    items.append({
-                        "id": f"vac-{vac_id}",
-                        "jobId": str(vac_id),
-                        "title": title,
-                        "company": company,
-                        "source": "Robota.ua",
-                        "page": page,
-                        "city": city_name,
-                        "isRemote": is_remote,
-                        "salaryMin": s_min,
-                        "salaryMax": s_max,
-                        "salaryText": sal_text,
-                        "experienceLevel": exp_label,
-                        "description": clean_desc,
-                        "duties": [
-                            f"Виконання завдань за посадою «{title}»",
-                            "Взаємодія з командою для досягнення цілей компанії",
-                            "Дотримання високих стандартів якості та внутрішніх регламентів",
-                            "Участь у поточних робочих процесах та професійний розвиток"
-                        ],
-                        "requirements": [
-                            "Відповідальність, уважність до деталей та висока мотивація",
-                            "Впевнені навички роботи з ПК та сучасними робочими інструментами",
-                            "Готовність навчатися та швидко опановувати нові завдання"
-                        ],
-                        "benefits": [
-                            "Офіційне працевлаштування та соціальні гарантії",
-                            "Своєчасна та стабільна виплата заробітної плати",
-                            "Гнучкий графік або можливість віддаленої роботи",
-                            "Дружній колектив та підтримка наставника"
-                        ],
-                        "skills": skills[:5],
-                        "url": announcement_url
-                    })
+                items.append({
+                    "id": f"vac-{vid}", "jobId": str(vid), "title": title, "company": comp,
+                    "city": doc.get("cityName") or (city if city != "Вся Україна" else "Україна"),
+                    "page": page, "isRemote": remote, "salaryMin": s_min, "salaryMax": s_max, "salaryText": s_text,
+                    "experienceLevel": exp, "description": desc, "skills": skills[:5],
+                    "url": build_vacancy_url(vid, doc.get("notebookId")),
+                    "duties": [f"Виконання завдань за посадою «{title}»", "Взаємодія з командою для досягнення цілей", "Дотримання стандартів якості компанії"],
+                    "requirements": ["Відповідальність та висока мотивація", "Впевнені навички роботи з ПК", "Готовність швидко навчатися"],
+                    "benefits": ["Офіційне працевлаштування та соціальні гарантії", "Своєчасна виплата зарплати", "Гнучкий графік або віддалена робота"]
+                })
     except Exception as e:
-        print(f"[Scraper Error] {e}")
-
+        print(f"[Error] {e}")
     return items
 
-def scrape_live_vacancies(portal="all", page=1, query="", city=""):
-    """Обгортка для повернення стандартизованої відповіді пошуку."""
-    page = max(1, int(page or 1))
-    clean_q = (query or "").strip()
-    vacancies = fetch_live_job_vacancies(query=clean_q, page=page, city=city)
-
-    return {
-        "success": True,
-        "page": page,
-        "portal": portal,
-        "query": query,
-        "city": city,
-        "vacancies": vacancies
-    }
-
-class ScraperServer(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        if parsed.path in ['/', '/index.html']:
+        p = urllib.parse.urlparse(self.path)
+        if p.path in ['/', '/index.html']:
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.end_headers()
             self.wfile.write(HTML_UI.encode('utf-8'))
-        elif parsed.path == '/api/scrape':
-            qp = urllib.parse.parse_qs(parsed.query)
-            res = scrape_live_vacancies(
-                portal=qp.get('portal', ['all'])[0],
-                page=int(qp.get('page', ['1'])[0]),
-                query=qp.get('query', [''])[0],
-                city=qp.get('city', [''])[0]
-            )
+        elif p.path == '/api/scrape':
+            qp = urllib.parse.parse_qs(p.query)
+            data = fetch_vacancies(query=qp.get('query', [''])[0], page=int(qp.get('page', ['1'])[0]), city=qp.get('city', [''])[0])
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
-            self.wfile.write(json.dumps(res, ensure_ascii=False).encode('utf-8'))
+            self.wfile.write(json.dumps({"success": True, "vacancies": data}, ensure_ascii=False).encode('utf-8'))
         else:
             self.send_response(404)
             self.end_headers()
-            self.wfile.write(b'Not Found')
-
-    def log_message(self, format, *args):
-        # Відключаємо зайвий шум у логах
-        pass
+    def log_message(self, *a): pass
 
 HTML_UI = """<!DOCTYPE html>
-<html lang="uk">
+<html lang="uk" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Work.ua & Robota.ua • Пошук роботи в Україні</title>
+  <title>Пошук роботи в Україні • Work.ua & Robota.ua</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <script>tailwind.config = { darkMode: 'class' };</script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: 'Plus Jakarta Sans', sans-serif; }
-    .mono { font-family: 'JetBrains Mono', monospace; }
-  </style>
+  <style>body { font-family: 'Plus Jakarta Sans', sans-serif; } .mono { font-family: 'JetBrains Mono', monospace; }</style>
 </head>
-<body id="appBody" class="bg-[#f4f5f7] text-slate-900 min-h-screen flex flex-col transition-colors duration-150">
-
-  <header id="appHeader" class="bg-white border-b border-slate-200 sticky top-0 z-40 transition-colors">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-15 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <a href="/" class="flex items-center gap-2 group">
-          <div class="h-8 w-8 rounded-lg bg-[#e23838] flex items-center justify-center text-white font-black text-lg tracking-tighter shadow-sm">W</div>
-          <div class="flex flex-col text-left">
-            <span class="text-xl font-black tracking-tight leading-none text-slate-900" id="brandText">Work<span class="text-[#e23838]">.ua</span></span>
-            <span class="text-[10px] text-slate-500 font-medium hidden sm:block">Пошук діючих вакансій в Україні</span>
-          </div>
-        </a>
-      </div>
-
+<body class="bg-[#f4f5f7] dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen flex flex-col transition-colors">
+  <header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-4 h-15 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-[#e23838] flex items-center justify-center text-white font-black text-lg">W</div>
+        <div>
+          <span class="text-xl font-black text-slate-900 dark:text-white">Work<span class="text-[#e23838]">.ua</span></span>
+          <span class="text-[10px] text-slate-500 block">Пошук діючих вакансій</span>
+        </div>
+      </a>
       <div class="flex items-center gap-2">
-        <button onclick="toggleSavedFilter()" id="savedBtn" class="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer flex items-center gap-1.5">
-          <span>⭐ Обрані (<span id="savedCount">0</span>)</span>
+        <button onclick="toggleSavedFilter()" id="savedBtn" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer">
+          ⭐ Обрані (<span id="savedCount">0</span>)
         </button>
-        <button onclick="toggleTheme()" id="themeBtn" class="p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 transition cursor-pointer" title="Змінити тему">☀️</button>
+        <button onclick="toggleTheme()" id="themeBtn" class="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 cursor-pointer">☀️</button>
       </div>
     </div>
   </header>
 
-  <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
-    <div id="searchBox" class="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm transition">
-      <div class="flex flex-col md:flex-row items-stretch gap-2.5">
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-5">
+    <div class="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+      <div class="flex flex-col md:flex-row gap-2.5">
         <div class="flex-1 relative flex items-center">
           <span class="absolute left-3.5 text-slate-400">🔍</span>
-          <input type="text" id="searchInput" placeholder="Посада, навичка або компанія (наприклад: Python, Бухгалтер, Водій...)"
-            class="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#e23838] focus:bg-white transition"
+          <input type="text" id="searchInput" placeholder="Посада, навичка або компанія (Python, Бухгалтер...)"
+            class="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:border-[#e23838]"
             onkeydown="if(event.key==='Enter') executeSearch(1)"/>
         </div>
-
-        <div class="md:w-56 relative flex items-center">
-          <span class="absolute left-3.5 text-slate-400">📍</span>
-          <select id="citySelect" class="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:outline-none focus:border-[#e23838] focus:bg-white cursor-pointer appearance-none transition" onchange="executeSearch(1)">
-            <option value="Вся Україна">Вся Україна</option>
-            <option value="Київ">Київ</option>
-            <option value="Львів">Львів</option>
-            <option value="Одеса">Одеса</option>
-            <option value="Дніпро">Дніпро</option>
-            <option value="Харків">Харків</option>
-            <option value="Вінниця">Вінниця</option>
-            <option value="Дистанційно">Дистанційно (Remote)</option>
-          </select>
-        </div>
-
-        <button onclick="executeSearch(1)" class="px-7 py-2.5 rounded-xl font-bold text-sm text-white bg-[#e23838] hover:bg-[#c92f2f] active:scale-[0.98] transition shadow-sm flex items-center justify-center cursor-pointer">
+        <select id="citySelect" class="md:w-56 px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 focus:outline-none focus:border-[#e23838] cursor-pointer" onchange="executeSearch(1)">
+          <option value="Вся Україна">Вся Україна</option>
+          <option value="Київ">Київ</option><option value="Львів">Львів</option><option value="Одеса">Одеса</option>
+          <option value="Дніпро">Дніпро</option><option value="Харків">Харків</option><option value="Дистанційно">Дистанційно (Remote)</option>
+        </select>
+        <button onclick="executeSearch(1)" class="px-7 py-2.5 rounded-xl font-bold text-sm text-white bg-[#e23838] hover:bg-[#c92f2f] cursor-pointer shadow-sm">
           Знайти роботу
         </button>
       </div>
-
-      <div class="flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100 text-xs overflow-x-auto scrollbar-none">
+      <div class="flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 text-xs overflow-x-auto">
         <span class="text-slate-400">Швидкий пошук:</span>
-        <button onclick="setQuery('Python')" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">Python</button>
-        <button onclick="setQuery('B2B Продажі')" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">B2B Продажі</button>
-        <button onclick="setQuery('Бухгалтер')" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">Бухгалтер</button>
-        <button onclick="setQuery('Логіст')" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">Логіст</button>
-        <button onclick="document.getElementById('citySelect').value='Дистанційно'; executeSearch(1)" class="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer">Дистанційно</button>
+        <button onclick="setQuery('Python')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Python</button>
+        <button onclick="setQuery('Бухгалтер')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Бухгалтер</button>
+        <button onclick="setQuery('Менеджер')" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Менеджер</button>
+        <button onclick="document.getElementById('citySelect').value='Дистанційно'; executeSearch(1)" class="px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 cursor-pointer">Дистанційно</button>
       </div>
     </div>
 
-    <div id="liveStatusBanner" class="p-3 rounded-xl bg-slate-900 text-slate-300 border border-slate-800 text-xs mono flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="liveStatusText">Пошук діючих вакансій</span>
-      </div>
-      <span id="liveSpeedText" class="text-slate-400">Прямі діючі посилання на повні оголошення</span>
+    <div class="p-3 rounded-xl bg-slate-900 text-slate-300 border border-slate-800 text-xs mono flex justify-between">
+      <div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-emerald-400"></span><span id="liveStatusText">Пошук діючих вакансій</span></div>
+      <span id="liveSpeedText" class="text-slate-400">Прямі посилання на повні оголошення</span>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-      <aside class="lg:col-span-4 space-y-4">
-        <div id="filterCard" class="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5 transition">
-          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-            <h3 class="font-bold text-sm text-slate-900">Фільтри</h3>
-            <button onclick="resetFilters()" class="text-xs text-[#e23838] hover:underline cursor-pointer font-semibold">Скинути всі</button>
+      <aside class="lg:col-span-4 p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4 text-xs">
+        <div class="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800 font-bold">
+          <span>Фільтри</span><button onclick="resetFilters()" class="text-[#e23838] hover:underline cursor-pointer">Скинути всі</button>
+        </div>
+        <div>
+          <label class="font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Досвід</label>
+          <div class="space-y-1">
+            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="exp" value="all" checked onchange="applyFilters()"/> Будь-який</label>
+            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="exp" value="no-exp" onchange="applyFilters()"/> Без досвіду / Junior</label>
+            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="exp" value="Middle" onchange="applyFilters()"/> Middle / Досвідчені</label>
           </div>
-
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Досвід роботи</label>
-            <div class="space-y-1.5 text-xs">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="expFilter" value="all" checked onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Будь-який досвід</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="expFilter" value="no-exp" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Без досвіду / Junior</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="expFilter" value="Middle" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Middle / Досвідчені</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" id="remoteCheck" onchange="applyFilters()" class="rounded text-[#e23838]" />
-              <span class="text-xs font-medium text-slate-800">Тільки дистанційна робота</span>
-            </label>
-          </div>
-
-          <div class="space-y-2 pt-2 border-t border-slate-100">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Зарплата</label>
-            <div class="space-y-1.5 text-xs">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="salFilter" value="0" checked onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Будь-яка (включаючи за домовленістю)</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="salFilter" value="20000" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>від 20 000 грн</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="salFilter" value="35000" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>від 35 000 грн</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="salFilter" value="50000" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>від 50 000 грн</span>
-              </label>
-            </div>
+        </div>
+        <label class="flex items-center gap-2 cursor-pointer font-medium"><input type="checkbox" id="remoteCheck" onchange="applyFilters()"/> Тільки дистанційно</label>
+        <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+          <label class="font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Зарплата</label>
+          <div class="space-y-1">
+            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="sal" value="0" checked onchange="applyFilters()"/> Будь-яка</label>
+            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="sal" value="20000" onchange="applyFilters()"/> від 20 000 грн</label>
+            <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="sal" value="35000" onchange="applyFilters()"/> від 35 000 грн</label>
           </div>
         </div>
       </aside>
 
       <section class="lg:col-span-8 space-y-4">
-        <div class="flex items-center justify-between pb-1">
-          <div>
-            <h2 class="text-base sm:text-lg font-bold text-slate-900" id="resultsTitle">
-              Вакансії в Україні (Сторінка <span id="curPageNum">1</span>)
-            </h2>
-            <span class="text-xs text-slate-500" id="resultsCount">Отримання вакансій...</span>
-          </div>
-          <div class="text-xs font-mono text-slate-500 hidden sm:block">Прямі посилання</div>
+        <div class="flex justify-between items-center text-sm">
+          <span class="font-bold" id="resultsCount">Завантаження вакансій...</span>
+          <span class="text-xs text-slate-400 mono">Сторінка <span id="curPageNum">1</span></span>
         </div>
-
         <div id="cardsList" class="space-y-3.5"></div>
-
-        <nav id="paginationNav" class="p-3.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-between text-xs font-medium shadow-sm transition">
-          <button onclick="changePage(currentPage - 1)" id="prevBtn" class="px-3.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition">
-            « Попередня
-          </button>
-          <div id="pageNumbers" class="flex items-center gap-1 mono"></div>
-          <button onclick="changePage(currentPage + 1)" id="nextBtn" class="px-3.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition">
-            Наступна »
-          </button>
+        <nav class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex justify-between text-xs font-medium shadow-sm">
+          <button onclick="changePage(currentPage-1)" id="prevBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-30 cursor-pointer">« Попередня</button>
+          <div id="pageNumbers" class="flex gap-1 mono"></div>
+          <button onclick="changePage(currentPage+1)" id="nextBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-30 cursor-pointer">Наступна »</button>
         </nav>
       </section>
     </div>
   </main>
 
-  <div id="jobModal" class="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 hidden flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-    <div id="modalBox" class="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 my-8 transition-colors max-h-[90vh] overflow-y-auto">
-      
-      <div class="flex justify-between items-start border-b pb-4">
+  <div id="jobModal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 my-8 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3">
         <div>
-          <span class="text-[11px] font-mono font-bold uppercase px-2.5 py-0.5 rounded-md text-white bg-[#e23838]" id="modalSourceBadge">Оголошення</span>
-          <h2 id="modalTitle" class="text-xl sm:text-2xl font-black text-slate-900 mt-2 leading-tight"></h2>
-          <div class="text-lg font-bold font-mono text-emerald-600 mt-1" id="modalSalary"></div>
+          <h2 id="modalTitle" class="text-xl font-bold leading-tight"></h2>
+          <div id="modalSalary" class="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-0.5"></div>
         </div>
-        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-2 text-xl font-bold cursor-pointer rounded-lg hover:bg-slate-100">✕</button>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-1 text-xl font-bold cursor-pointer">✕</button>
       </div>
-
-      <div class="flex flex-wrap items-center gap-4 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100" id="modalMetaBox">
-        <div>🏢 Компанія: <strong class="text-slate-900" id="modalCompany"></strong></div>
-        <div>📍 Локація: <strong class="text-slate-900" id="modalCity"></strong></div>
-        <div>⏱ Досвід: <strong class="text-slate-900" id="modalExp"></strong></div>
-        <div id="modalRemoteBadge" class="text-emerald-700 font-semibold hidden">🌐 Дистанційно</div>
+      <div class="flex flex-wrap gap-4 text-xs bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+        <div>🏢 Компанія: <strong id="modalCompany"></strong></div>
+        <div>📍 Локація: <strong id="modalCity"></strong></div>
+        <div>⏱ Досвід: <strong id="modalExp"></strong></div>
       </div>
-
-      <div class="space-y-4 text-xs sm:text-sm text-slate-700 leading-relaxed">
-        <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1">Опис вакансії:</h4>
-          <p id="modalDesc"></p>
-        </div>
-
-        <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Основні обов'язки:</h4>
-          <ul id="modalDuties" class="list-disc pl-5 space-y-1 text-slate-600"></ul>
-        </div>
-
-        <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Вимоги:</h4>
-          <ul id="modalRequirements" class="list-disc pl-5 space-y-1 text-slate-600"></ul>
-        </div>
-
-        <div>
-          <h4 class="font-bold text-slate-900 text-sm mb-1.5">Умови роботи:</h4>
-          <ul id="modalBenefits" class="list-disc pl-5 space-y-1 text-slate-600"></ul>
-        </div>
+      <div class="text-xs sm:text-sm space-y-3 leading-relaxed">
+        <div><h4 class="font-bold mb-1">Опис вакансії:</h4><p id="modalDesc" class="text-slate-600 dark:text-slate-300"></p></div>
+        <div><h4 class="font-bold mb-1">Обов'язки:</h4><ul id="modalDuties" class="list-disc pl-5 space-y-0.5 text-slate-600 dark:text-slate-300"></ul></div>
+        <div><h4 class="font-bold mb-1">Вимоги:</h4><ul id="modalRequirements" class="list-disc pl-5 space-y-0.5 text-slate-600 dark:text-slate-300"></ul></div>
       </div>
-
-      <div>
-        <h4 class="font-bold text-slate-900 text-xs uppercase tracking-wider mb-2">Навички:</h4>
-        <div id="modalSkills" class="flex flex-wrap gap-1.5"></div>
+      <div><h4 class="font-bold text-xs uppercase mb-1.5">Навички:</h4><div id="modalSkills" class="flex flex-wrap gap-1.5"></div></div>
+      <div class="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center gap-3">
+        <button onclick="closeModal()" class="px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 cursor-pointer">Закрити</button>
+        <a id="modalDirectLink" href="#" target="_blank" rel="noopener noreferrer" class="px-5 py-2 rounded-xl text-xs font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white shadow-sm">
+          Відкрити повне оголошення ↗
+        </a>
       </div>
-
-      <div class="pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div class="text-[11px] text-slate-400 mono">
-          ID: #<span id="modalJobId"></span> • Пряме офіційне посилання
-        </div>
-        <div class="flex items-center gap-2 w-full sm:w-auto">
-          <button onclick="closeModal()" class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-100 cursor-pointer">
-            Закрити
-          </button>
-          <a id="modalDirectLink" href="#" target="_blank" rel="noopener noreferrer" class="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white transition text-center shadow-sm">
-            Відкрити повне оголошення на сайті ↗
-          </a>
-        </div>
-      </div>
-
     </div>
   </div>
 
-  <footer id="appFooter" class="border-t border-slate-200 bg-white py-6 mt-12 transition">
-    <div class="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-      <div class="flex items-center gap-2">
-        <span class="font-bold text-[#e23838]">Work.ua & Robota.ua</span>
-        <span>•</span>
-        <span>Пошук вакансій в Україні</span>
-      </div>
-      <div class="mono text-[11px]">Прямі переходи на повні оголошення</div>
+  <footer class="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-5 mt-10 text-xs text-slate-500">
+    <div class="max-w-6xl mx-auto px-4 flex justify-between items-center">
+      <span><strong>Work.ua & Robota.ua</strong> • Пошук роботи в Україні</span>
+      <span class="mono">Прямі посилання</span>
     </div>
   </footer>
 
   <script>
-    let isDark = localStorage.getItem('theme') === 'dark';
-    let currentPage = 1, totalPages = 5;
-    let currentRawVacancies = [];
-    let savedIds = JSON.parse(localStorage.getItem('savedVacancies') || '[]');
-    let showSavedOnly = false;
+    let isDark = localStorage.getItem('theme') === 'dark', currentPage = 1, totalPages = 5;
+    let rawVacancies = [], savedIds = JSON.parse(localStorage.getItem('saved') || '[]'), showSavedOnly = false;
 
-    function applyThemeStyles() {
-      const b = document.getElementById('appBody'), h = document.getElementById('appHeader'), f = document.getElementById('appFooter');
-      const sb = document.getElementById('searchBox'), fc = document.getElementById('filterCard'), pn = document.getElementById('paginationNav');
-      const bt = document.getElementById('brandText'), tbtn = document.getElementById('themeBtn'), mb = document.getElementById('modalBox');
-
-      if (isDark) {
-        b.className = "bg-slate-950 text-slate-100 min-h-screen flex flex-col transition-colors duration-150";
-        h.className = "bg-slate-900 border-b border-slate-800 sticky top-0 z-40 transition-colors";
-        f.className = "border-t border-slate-800 bg-slate-900 py-6 mt-12 transition";
-        sb.className = "p-4 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm transition";
-        fc.className = "p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-sm space-y-5 transition";
-        pn.className = "p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between text-xs font-medium shadow-sm transition";
-        bt.className = "text-xl font-black tracking-tight leading-none text-white";
-        mb.className = "bg-slate-900 text-white rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-800 my-8 transition-colors max-h-[90vh] overflow-y-auto";
-        tbtn.innerText = "🌙";
-      } else {
-        b.className = "bg-[#f4f5f7] text-slate-900 min-h-screen flex flex-col transition-colors duration-150";
-        h.className = "bg-white border-b border-slate-200 sticky top-0 z-40 transition-colors";
-        f.className = "border-t border-slate-200 bg-white py-6 mt-12 transition";
-        sb.className = "p-4 rounded-2xl bg-white border border-slate-200 shadow-sm transition";
-        fc.className = "p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-5 transition";
-        pn.className = "p-3.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-between text-xs font-medium shadow-sm transition";
-        bt.className = "text-xl font-black tracking-tight leading-none text-slate-900";
-        mb.className = "bg-white text-slate-900 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 my-8 transition-colors max-h-[90vh] overflow-y-auto";
-        tbtn.innerText = "☀️";
-      }
+    function applyTheme() {
+      document.documentElement.classList.toggle('dark', isDark);
+      document.getElementById('themeBtn').innerText = isDark ? '🌙' : '☀️';
       localStorage.setItem('theme', isDark ? 'dark' : 'light');
-      renderCards(getFilteredList());
     }
+    function toggleTheme() { isDark = !isDark; applyTheme(); }
 
-    function toggleTheme() {
-      isDark = !isDark;
-      applyThemeStyles();
-    }
-
-    function setQuery(q) {
-      document.getElementById('searchInput').value = q;
-      executeSearch(1);
-    }
-
+    function setQuery(q) { document.getElementById('searchInput').value = q; executeSearch(1); }
     function resetFilters() {
       document.getElementById('searchInput').value = '';
       document.getElementById('citySelect').value = 'Вся Україна';
-      document.querySelector('input[name="expFilter"][value="all"]').checked = true;
-      document.querySelector('input[name="salFilter"][value="0"]').checked = true;
+      document.querySelector('input[name="exp"][value="all"]').checked = true;
+      document.querySelector('input[name="sal"][value="0"]').checked = true;
       document.getElementById('remoteCheck').checked = false;
       showSavedOnly = false;
-      document.getElementById('savedBtn').classList.remove('bg-red-100', 'text-[#e23838]', 'border-red-200');
+      document.getElementById('savedBtn').classList.remove('bg-red-100', 'text-[#e23838]');
       executeSearch(1);
     }
 
     function toggleSaved(id) {
-      if (savedIds.includes(id)) {
-        savedIds = savedIds.filter(i => i !== id);
-      } else {
-        savedIds.push(id);
-      }
-      localStorage.setItem('savedVacancies', JSON.stringify(savedIds));
-      updateSavedCounter();
-      renderCards(getFilteredList());
-    }
-
-    function updateSavedCounter() {
+      savedIds = savedIds.includes(id) ? savedIds.filter(x => x !== id) : [...savedIds, id];
+      localStorage.setItem('saved', JSON.stringify(savedIds));
       document.getElementById('savedCount').innerText = savedIds.length;
+      applyFilters();
     }
 
     function toggleSavedFilter() {
       showSavedOnly = !showSavedOnly;
-      const btn = document.getElementById('savedBtn');
-      if (showSavedOnly) {
-        btn.classList.add('bg-red-100', 'text-[#e23838]', 'border-red-200');
-      } else {
-        btn.classList.remove('bg-red-100', 'text-[#e23838]', 'border-red-200');
-      }
-      renderCards(getFilteredList());
+      document.getElementById('savedBtn').classList.toggle('bg-red-100', showSavedOnly);
+      document.getElementById('savedBtn').classList.toggle('text-[#e23838]', showSavedOnly);
+      applyFilters();
     }
 
     async function executeSearch(page = 1) {
       currentPage = page;
       document.getElementById('curPageNum').innerText = page;
-
-      const q = document.getElementById('searchInput').value.trim();
-      const city = document.getElementById('citySelect').value;
-      const cardsList = document.getElementById('cardsList');
-
-      cardsList.innerHTML = `<div class="p-10 text-center text-slate-400 text-sm mono">Завантаження актуальних вакансій зі сторінки ${page}...</div>`;
+      const q = document.getElementById('searchInput').value.trim(), city = document.getElementById('citySelect').value;
+      const cl = document.getElementById('cardsList');
+      cl.innerHTML = `<div class="p-8 text-center text-slate-400 text-xs mono">Завантаження вакансій зі сторінки ${page}...</div>`;
       const t0 = performance.now();
 
       try {
-        const url = `/api/scrape?page=${page}&query=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`;
-        const res = await fetch(url);
+        const res = await fetch(`/api/scrape?page=${page}&query=${encodeURIComponent(q)}&city=${encodeURIComponent(city)}`);
         const data = await res.json();
-        const duration = Math.round(performance.now() - t0);
-
-        if (data.success && Array.isArray(data.vacancies)) {
-          currentRawVacancies = data.vacancies;
-          const queryLabel = q ? ` за запитом "${q}"` : '';
-          document.getElementById('liveStatusText').innerText = `Знайдено ${data.vacancies.length} актуальних оголошень${queryLabel} на сторінці ${page}`;
-          document.getElementById('liveSpeedText').innerText = `${duration} мс • прямі посилання`;
+        if (data.success) {
+          rawVacancies = data.vacancies || [];
+          document.getElementById('liveStatusText').innerText = `Знайдено ${rawVacancies.length} вакансій${q ? ` за запитом «${q}»` : ''}`;
+          document.getElementById('liveSpeedText').innerText = `${Math.round(performance.now() - t0)} мс • прямі посилання`;
           applyFilters();
-        } else {
-          cardsList.innerHTML = `<div class="p-8 text-center text-red-500 text-sm">Помилка під час завантаження оголошень.</div>`;
         }
       } catch (e) {
-        cardsList.innerHTML = `<div class="p-8 text-center text-red-500 text-sm">Збій з'єднання: ${e.message}</div>`;
+        cl.innerHTML = `<div class="p-6 text-center text-red-500 text-xs">Помилка завантаження: ${e.message}</div>`;
       }
       renderPagination();
     }
@@ -548,95 +287,54 @@ HTML_UI = """<!DOCTYPE html>
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function getFilteredList() {
-      const exp = document.querySelector('input[name="expFilter"]:checked').value;
-      const sal = parseInt(document.querySelector('input[name="salFilter"]:checked').value) || 0;
+    function applyFilters() {
+      const exp = document.querySelector('input[name="exp"]:checked').value;
+      const sal = parseInt(document.querySelector('input[name="sal"]:checked').value) || 0;
       const remote = document.getElementById('remoteCheck').checked;
 
-      return currentRawVacancies.filter(v => {
+      const filtered = rawVacancies.filter(v => {
         if (showSavedOnly && !savedIds.includes(v.id)) return false;
         if (exp === 'no-exp' && !v.experienceLevel.includes('Junior') && !v.experienceLevel.includes('Без досвіду')) return false;
-        if (exp === 'Middle' && !v.experienceLevel.includes('Middle') && !v.experienceLevel.includes('Senior')) return false;
+        if (exp === 'Middle' && !v.experienceLevel.includes('Middle')) return false;
         if (remote && !v.isRemote) return false;
-        if (sal > 0) {
-          if (v.salaryMin === 0 && v.salaryMax === 0) return false;
-          const maxVal = v.salaryMax || v.salaryMin;
-          if (maxVal < sal) return false;
-        }
+        if (sal > 0 && (v.salaryMin === 0 || (v.salaryMax || v.salaryMin) < sal)) return false;
         return true;
       });
-    }
 
-    function applyFilters() {
-      renderCards(getFilteredList());
+      renderCards(filtered);
     }
 
     function renderCards(list) {
-      const cardsList = document.getElementById('cardsList');
-      const q = document.getElementById('searchInput').value.trim();
-      document.getElementById('resultsCount').innerText = `Знайдено ${list.length} актуальних оголошень${q ? ` за запитом "${q}"` : ''}`;
-
-      if (list.length === 0) {
-        cardsList.innerHTML = `
-          <div class="p-10 rounded-2xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} text-center space-y-3">
-            <p class="text-sm text-slate-500">За обраними фільтрами оголошень не знайдено.</p>
-            <button onclick="resetFilters()" class="px-4 py-2 rounded-xl bg-[#e23838] text-white text-xs font-bold cursor-pointer">Скинути фільтри</button>
-          </div>
-        `;
+      const cl = document.getElementById('cardsList');
+      document.getElementById('resultsCount').innerText = `Знайдено ${list.length} вакансій`;
+      if (!list.length) {
+        cl.innerHTML = `<div class="p-8 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-sm text-slate-500">Оголошень не знайдено. <button onclick="resetFilters()" class="text-[#e23838] underline ml-1 cursor-pointer">Скинути фільтри</button></div>`;
         return;
       }
-
-      cardsList.innerHTML = list.map(v => {
-        const bg = isDark ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200 hover:border-slate-300';
-        const tColor = isDark ? 'text-sky-400 hover:text-sky-300' : 'text-[#0066cc] hover:text-[#004c99]';
-        const sColor = (v.salaryMin > 0 || v.salaryMax > 0) ? (isDark ? 'text-emerald-400' : 'text-emerald-700') : (isDark ? 'text-slate-400' : 'text-slate-600');
+      cl.innerHTML = list.map(v => {
         const isFav = savedIds.includes(v.id);
-
         return `
-          <article class="p-5 rounded-2xl border ${bg} transition shadow-xs space-y-2.5">
-            <div class="flex items-start justify-between gap-3">
+          <article class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-xs space-y-2.5">
+            <div class="flex justify-between items-start gap-3">
               <div>
-                <h3 class="text-base sm:text-lg font-bold leading-snug">
-                  <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="${tColor} transition hover:underline" title="Відкрити повне оголошення">
-                    ${v.title} ↗
-                  </a>
+                <h3 class="text-base sm:text-lg font-bold">
+                  <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="text-sky-600 dark:text-sky-400 hover:underline">${v.title} ↗</a>
                 </h3>
-                <div class="text-sm sm:text-base font-bold font-mono ${sColor} mt-0.5">
-                  ${v.salaryText}
-                </div>
+                <div class="text-sm font-bold font-mono text-emerald-700 dark:text-emerald-400">${v.salaryText}</div>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
-                <button onclick="toggleSaved('${v.id}')" class="p-1.5 rounded-lg border text-xs cursor-pointer ${isFav ? 'bg-amber-100 text-amber-600 border-amber-300' : 'text-slate-400 border-slate-200 hover:text-slate-600'}" title="Зберегти">
-                  ${isFav ? '★' : '☆'}
-                </button>
-                <span class="text-[10px] font-mono px-2 py-0.5 rounded-md font-bold uppercase bg-slate-100 text-slate-700">
-                  Активне • Стор. ${v.page}
-                </span>
-              </div>
+              <button onclick="toggleSaved('${v.id}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs cursor-pointer ${isFav ? 'bg-amber-100 text-amber-600' : 'text-slate-400'}">${isFav ? '★' : '☆'}</button>
             </div>
-
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-              <span class="font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}">🏢 ${v.company}</span>
+            <div class="flex flex-wrap gap-x-3 text-xs text-slate-500">
+              <span class="font-semibold text-slate-700 dark:text-slate-300">🏢 ${v.company}</span>
               <span>📍 ${v.city}</span>
               ${v.isRemote ? '<span class="text-emerald-600 font-semibold">🌐 Дистанційно</span>' : ''}
               <span class="mono">${v.experienceLevel}</span>
             </div>
-
-            <p class="text-xs sm:text-[13px] ${isDark ? 'text-slate-400' : 'text-slate-600'} line-clamp-2 leading-relaxed">
-              ${v.description}
-            </p>
-
-            <div class="flex flex-wrap gap-1.5 pt-1">
-              ${v.skills.map(sk => `<span class="px-2 py-0.5 rounded text-[11px] ${isDark ? 'bg-slate-950 text-slate-300 border border-slate-800' : 'bg-slate-50 text-slate-700 border border-slate-200'}">${sk}</span>`).join('')}
-            </div>
-
-            <div class="flex items-center justify-between pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-100'} text-xs">
-              <button onclick="openModal('${v.id}')" class="text-xs font-bold text-[#e23838] hover:underline cursor-pointer flex items-center gap-1">
-                <span>📖 Переглянути опис</span>
-              </button>
-              <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white transition flex items-center gap-1 shadow-2xs">
-                <span>Перейти до оголошення ↗</span>
-              </a>
+            <p class="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">${v.description}</p>
+            <div class="flex flex-wrap gap-1">${v.skills.map(s => `<span class="px-2 py-0.5 rounded text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${s}</span>`).join('')}</div>
+            <div class="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <button onclick="openModal('${v.id}')" class="font-bold text-[#e23838] hover:underline cursor-pointer">📖 Опис вакансії</button>
+              <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-lg font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white shadow-2xs">Перейти до оголошення ↗</a>
             </div>
           </article>
         `;
@@ -644,65 +342,33 @@ HTML_UI = """<!DOCTYPE html>
     }
 
     function renderPagination() {
-      const pNav = document.getElementById('pageNumbers');
       document.getElementById('prevBtn').disabled = currentPage === 1;
       document.getElementById('nextBtn').disabled = currentPage === totalPages;
-
-      let html = '';
-      for (let i = 1; i <= totalPages; i++) {
-        const isAct = i === currentPage;
-        const cls = isAct ? 'bg-[#e23838] text-white font-bold' : (isDark ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-700');
-        html += `<button onclick="changePage(${i})" class="h-8 w-8 rounded-lg flex items-center justify-center transition cursor-pointer ${cls}">${i}</button>`;
-      }
-      pNav.innerHTML = html;
+      document.getElementById('pageNumbers').innerHTML = Array.from({length: totalPages}, (_, i) => i + 1).map(i =>
+        `<button onclick="changePage(${i})" class="h-8 w-8 rounded-lg flex items-center justify-center cursor-pointer ${i === currentPage ? 'bg-[#e23838] text-white font-bold' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}">${i}</button>`
+      ).join('');
     }
 
     function openModal(id) {
-      const v = currentRawVacancies.find(item => item.id === id);
+      const v = rawVacancies.find(x => x.id === id);
       if (!v) return;
       document.getElementById('modalTitle').innerText = v.title;
       document.getElementById('modalSalary').innerText = v.salaryText;
       document.getElementById('modalCompany').innerText = v.company;
       document.getElementById('modalCity').innerText = v.city;
       document.getElementById('modalExp').innerText = v.experienceLevel;
-      document.getElementById('modalJobId').innerText = v.jobId;
-      
-      const remoteBadge = document.getElementById('modalRemoteBadge');
-      if (v.isRemote) {
-        remoteBadge.classList.remove('hidden');
-      } else {
-        remoteBadge.classList.add('hidden');
-      }
-
       document.getElementById('modalDesc').innerText = v.description;
-      
-      const dutiesEl = document.getElementById('modalDuties');
-      dutiesEl.innerHTML = (v.duties || []).map(d => `<li>${d}</li>`).join('');
-
-      const reqEl = document.getElementById('modalRequirements');
-      reqEl.innerHTML = (v.requirements || []).map(r => `<li>${r}</li>`).join('');
-
-      const benEl = document.getElementById('modalBenefits');
-      benEl.innerHTML = (v.benefits || []).map(b => `<li>${b}</li>`).join('');
-
+      document.getElementById('modalDuties').innerHTML = v.duties.map(d => `<li>${d}</li>`).join('');
+      document.getElementById('modalRequirements').innerHTML = v.requirements.map(r => `<li>${r}</li>`).join('');
+      document.getElementById('modalSkills').innerHTML = v.skills.map(s => `<span class="px-2.5 py-1 rounded-md text-xs bg-slate-100 dark:bg-slate-800 font-medium">${s}</span>`).join('');
       document.getElementById('modalDirectLink').href = v.url;
-      document.getElementById('modalSkills').innerHTML = (v.skills || []).map(sk => 
-        `<span class="px-2.5 py-1 rounded-md text-xs ${isDark ? 'bg-slate-800 text-slate-200 border border-slate-700' : 'bg-slate-100 text-slate-700 border border-slate-200'} font-medium">${sk}</span>`
-      ).join('');
-
       document.getElementById('jobModal').classList.remove('hidden');
     }
+    function closeModal() { document.getElementById('jobModal').classList.add('hidden'); }
+    document.getElementById('jobModal').onclick = e => { if (e.target.id === 'jobModal') closeModal(); };
 
-    function closeModal() {
-      document.getElementById('jobModal').classList.add('hidden');
-    }
-
-    document.getElementById('jobModal').addEventListener('click', function(e) {
-      if (e.target === this) closeModal();
-    });
-
-    applyThemeStyles();
-    updateSavedCounter();
+    applyTheme();
+    document.getElementById('savedCount').innerText = savedIds.length;
     executeSearch(1);
   </script>
 </body>
@@ -710,15 +376,11 @@ HTML_UI = """<!DOCTYPE html>
 """
 
 def run():
-    class ThreadedServer(ThreadingHTTPServer):
-        allow_reuse_address = True
-
-    server = ThreadedServer(('0.0.0.0', PORT), ScraperServer)
-    print(f"🚀 Job Search Server successfully started on port {PORT}")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        server.server_close()
+    class Srv(ThreadingHTTPServer): allow_reuse_address = True
+    server = Srv(('0.0.0.0', PORT), Handler)
+    print(f"🚀 Started on port {PORT}")
+    try: server.serve_forever()
+    except KeyboardInterrupt: server.server_close()
 
 if __name__ == '__main__':
     run()
