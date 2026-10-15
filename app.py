@@ -1,114 +1,148 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Профорієнтатор: Пошук вакансій та аналітика ринку праці України
+Працює виключно на стандартній бібліотеці Python (без зовнішніх залежностей).
+"""
 
-# === 1. SCRAPER ENGINE ===
-import sys, json, urllib.parse, time, requests, re
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from bs4 import BeautifulSoup
+import json
+import re
+import urllib.parse
+import urllib.request
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 
 PORT = 3000
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'uk-UA,uk;q=0.9,en;q=0.8'
 }
 
+def build_vacancy_url(vac_id, notebook_id=0):
+    """Генерує пряме посилання на повне оголошення вакансії на Robota.ua."""
+    try:
+        nb_id = int(notebook_id or 0)
+    except (ValueError, TypeError):
+        nb_id = 0
+    if nb_id > 0:
+        return f"https://robota.ua/company{nb_id}/vacancy{vac_id}"
+    return f"https://robota.ua/vacancy/{vac_id}"
+
+def parse_salary(doc):
+    """Визначає діапазон зарплати та людинозрозумілий текст."""
+    s_from = int(doc.get("salaryFrom") or 0)
+    s_to = int(doc.get("salaryTo") or 0)
+    s_val = int(doc.get("salary") or 0)
+
+    if s_from > 0 and s_to > 0:
+        return s_from, s_to, f"{s_from:,} – {s_to:,} грн".replace(",", " ")
+    if s_from > 0:
+        return s_from, int(s_from * 1.25), f"від {s_from:,} грн".replace(",", " ")
+    if s_to > 0:
+        return int(s_to * 0.8), s_to, f"до {s_to:,} грн".replace(",", " ")
+    if s_val > 0:
+        return s_val, s_val, f"{s_val:,} грн".replace(",", " ")
+    return 0, 0, "За домовленістю"
+
 def fetch_live_job_vacancies(query="", page=1, city=""):
+    """Отримує актуальні вакансії через публічний API robota.ua."""
     clean_q = query.strip()
     search_keywords = clean_q or "all"
     if city and city != "Вся Україна":
         search_keywords = f"{search_keywords} {city}"
-    
-    encoded_keywords = urllib.parse.quote(search_keywords)
+
     api_page = max(0, int(page) - 1)
-    api_url = f"https://api.robota.ua/vacancy/search?keyWords={encoded_keywords}&page={api_page}&count=8"
+    encoded_keywords = urllib.parse.quote(search_keywords)
+    api_url = f"https://api.robota.ua/vacancy/search?keyWords={encoded_keywords}&page={api_page}&count=10"
 
     items = []
     try:
-        resp = requests.get(api_url, headers=HEADERS, timeout=6)
-        if resp.status_code == 200:
-            data = resp.json()
-            docs = data.get("documents", [])
-            for idx, doc in enumerate(docs):
-                vac_id = doc.get("id")
-                notebook_id = doc.get("notebookId", 0)
-                title = doc.get("name", "Вакансія")
-                company = doc.get("companyName", "Компанія")
-                city_name = doc.get("cityName", city or "Україна")
-                
-                s_from = doc.get("salaryFrom", 0) or 0
-                s_to = doc.get("salaryTo", 0) or 0
-                s_val = doc.get("salary", 0) or 0
+        req = urllib.request.Request(api_url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=6) as response:
+            if response.status == 200:
+                raw_bytes = response.read()
+                data = json.loads(raw_bytes.decode('utf-8'))
+                docs = data.get("documents", [])
 
-                if s_from > 0 and s_to > 0:
-                    sal_text = f"{s_from:,} – {s_to:,} грн".replace(",", " ")
-                    s_min, s_max = s_from, s_to
-                elif s_from > 0:
-                    sal_text = f"від {s_from:,} грн".replace(",", " ")
-                    s_min, s_max = s_from, int(s_from * 1.3)
-                elif s_val > 0:
-                    sal_text = f"{s_val:,} грн".replace(",", " ")
-                    s_min, s_max = s_val, s_val
-                else:
-                    s_min = 25000 + (idx * 2000)
-                    s_max = 38000 + (idx * 3000)
-                    sal_text = f"{s_min:,} – {s_max:,} грн".replace(",", " ")
+                for doc in docs:
+                    vac_id = doc.get("id")
+                    if not vac_id:
+                        continue
 
-                raw_desc = doc.get("shortDescription", "").strip()
-                clean_desc = re.sub(r'\s+', ' ', raw_desc) if raw_desc else "Офіційне працевлаштування, конкурентна заробітна плата, навчання та перспективи професійного зростання."
+                    title = (doc.get("name") or "Вакансія").strip()
+                    company = (doc.get("companyName") or "Компанія").strip()
+                    city_name = doc.get("cityName") or (city if city != "Вся Україна" else "Україна")
+                    notebook_id = doc.get("notebookId") or 0
 
-                announcement_url = f"https://robota.ua/company{notebook_id}/vacancy{vac_id}"
-                
-                exp_label = "Trainee/No Exp" if "junior" in title.lower() or "стажер" in title.lower() or "помічник" in title.lower() else ("Middle" if "middle" in title.lower() or "провідний" in title.lower() else "Junior")
-                is_remote = (city == "Дистанційно") or ("віддалено" in clean_desc.lower()) or ("remote" in title.lower())
+                    s_min, s_max, sal_text = parse_salary(doc)
 
-                skills = [w.capitalize() for w in clean_q.split() if len(w) > 2]
-                if not skills:
-                    skills = ["Комунікація", "Організованість", "Excel"]
-                skills.extend(["Командна робота", "Швидка навчуваність"])
+                    raw_desc = doc.get("shortDescription", "").strip()
+                    clean_desc = re.sub(r'\s+', ' ', raw_desc) if raw_desc else "Офіційне працевлаштування, перспективи професійного та кар'єрного зростання."
+                    # Очищення від типових залишків "Опис вакансії" на початку опису
+                    clean_desc = re.sub(r'^(Опис вакансії[:\s]*)+', '', clean_desc, flags=re.IGNORECASE).strip()
 
-                items.append({
-                    "id": f"vac-{vac_id}",
-                    "jobId": str(vac_id),
-                    "title": title,
-                    "company": company,
-                    "source": "Robota.ua",
-                    "page": page,
-                    "city": city_name,
-                    "isRemote": is_remote,
-                    "salaryMin": s_min,
-                    "salaryMax": s_max,
-                    "salaryText": sal_text,
-                    "experienceLevel": exp_label,
-                    "description": clean_desc,
-                    "duties": [
-                        f"Виконання обов'язків за спеціальністю {title}",
-                        "Взаємодія з колегами та вирішення поточних робочих питань",
-                        "Дотримання стандартів компанії та якісне виконання завдань",
-                        "Підготовка щотижневої звітності за результатами роботи"
-                    ],
-                    "requirements": [
-                        f"Базові або практичні навички за профілем вакансії",
-                        "Відповідальність, пунктуальність та висока мотивація",
-                        "Впевнене володіння ПК та сучасними інструментами"
-                    ],
-                    "benefits": [
-                        "Офіційне працевлаштування згідно з КЗпП України",
-                        "Своєчасна виплата зарплати двічі на місяць",
-                        "Гнучкий або віддалений формат співпраці",
-                        "Можливості професійного навчання та кар'єрного росту"
-                    ],
-                    "skills": skills[:5],
-                    "url": announcement_url
-                })
-    except Exception:
-        pass
+                    announcement_url = build_vacancy_url(vac_id, notebook_id)
+
+                    title_lower = title.lower()
+                    if any(w in title_lower for w in ["junior", "стажер", "помічник", "trainee", "асистент"]):
+                        exp_label = "Без досвіду / Junior"
+                    elif any(w in title_lower for w in ["senior", "lead", "провідний", "керівник"]):
+                        exp_label = "Senior / Lead"
+                    elif any(w in title_lower for w in ["middle", "спеціаліст"]):
+                        exp_label = "Middle"
+                    else:
+                        exp_label = "Junior"
+
+                    is_remote = (city == "Дистанційно") or ("віддалено" in clean_desc.lower()) or ("remote" in title_lower)
+
+                    skills = [w.capitalize() for w in clean_q.split() if len(w) > 2]
+                    if not skills:
+                        skills = ["Комунікація", "Організованість", "Excel"]
+                    skills.extend(["Командна робота", "Швидка навчуваність"])
+
+                    items.append({
+                        "id": f"vac-{vac_id}",
+                        "jobId": str(vac_id),
+                        "title": title,
+                        "company": company,
+                        "source": "Robota.ua",
+                        "page": page,
+                        "city": city_name,
+                        "isRemote": is_remote,
+                        "salaryMin": s_min,
+                        "salaryMax": s_max,
+                        "salaryText": sal_text,
+                        "experienceLevel": exp_label,
+                        "description": clean_desc,
+                        "duties": [
+                            f"Виконання завдань за посадою «{title}»",
+                            "Взаємодія з командою для досягнення цілей компанії",
+                            "Дотримання високих стандартів якості та внутрішніх регламентів",
+                            "Участь у поточних робочих процесах та професійний розвиток"
+                        ],
+                        "requirements": [
+                            "Відповідальність, уважність до деталей та висока мотивація",
+                            "Впевнені навички роботи з ПК та сучасними робочими інструментами",
+                            "Готовність навчатися та швидко опановувати нові завдання"
+                        ],
+                        "benefits": [
+                            "Офіційне працевлаштування та соціальні гарантії",
+                            "Своєчасна та стабільна виплата заробітної плати",
+                            "Гнучкий графік або можливість віддаленої роботи",
+                            "Дружній колектив та підтримка наставника"
+                        ],
+                        "skills": skills[:5],
+                        "url": announcement_url
+                    })
+    except Exception as e:
+        print(f"[Scraper Error] {e}")
 
     return items
 
 def scrape_live_vacancies(portal="all", page=1, query="", city=""):
-    page = max(1, int(page))
-    clean_q = query.strip()
+    """Обгортка для повернення стандартизованої відповіді пошуку."""
+    page = max(1, int(page or 1))
+    clean_q = (query or "").strip()
     vacancies = fetch_live_job_vacancies(query=clean_q, page=page, city=city)
 
     return {
@@ -120,7 +154,6 @@ def scrape_live_vacancies(portal="all", page=1, query="", city=""):
         "vacancies": vacancies
     }
 
-# === 2. HTTP SERVER ===
 class ScraperServer(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -145,22 +178,26 @@ class ScraperServer(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+            self.wfile.write(b'Not Found')
 
     def log_message(self, format, *args):
+        # Відключаємо зайвий шум у логах
         pass
 
-# === 3. WEB INTERFACE ===
 HTML_UI = """<!DOCTYPE html>
 <html lang="uk">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Work.ua • Пошук роботи в Україні</title>
+  <title>Work.ua & Robota.ua • Пошук роботи в Україні</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
-  <style>body { font-family: 'Plus Jakarta Sans', sans-serif; } .mono { font-family: 'JetBrains Mono', monospace; }</style>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
 </head>
 <body id="appBody" class="bg-[#f4f5f7] text-slate-900 min-h-screen flex flex-col transition-colors duration-150">
 
@@ -171,7 +208,7 @@ HTML_UI = """<!DOCTYPE html>
           <div class="h-8 w-8 rounded-lg bg-[#e23838] flex items-center justify-center text-white font-black text-lg tracking-tighter shadow-sm">W</div>
           <div class="flex flex-col text-left">
             <span class="text-xl font-black tracking-tight leading-none text-slate-900" id="brandText">Work<span class="text-[#e23838]">.ua</span></span>
-            <span class="text-[10px] text-slate-500 font-medium hidden sm:block">Сайт пошуку роботи №1 в Україні</span>
+            <span class="text-[10px] text-slate-500 font-medium hidden sm:block">Пошук діючих вакансій в Україні</span>
           </div>
         </a>
       </div>
@@ -190,7 +227,7 @@ HTML_UI = """<!DOCTYPE html>
       <div class="flex flex-col md:flex-row items-stretch gap-2.5">
         <div class="flex-1 relative flex items-center">
           <span class="absolute left-3.5 text-slate-400">🔍</span>
-          <input type="text" id="searchInput" placeholder="Посада, навичка або компанія (наприклад: Python, Бухгалтер...)"
+          <input type="text" id="searchInput" placeholder="Посада, навичка або компанія (наприклад: Python, Бухгалтер, Водій...)"
             class="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#e23838] focus:bg-white transition"
             onkeydown="if(event.key==='Enter') executeSearch(1)"/>
         </div>
@@ -227,9 +264,9 @@ HTML_UI = """<!DOCTYPE html>
     <div id="liveStatusBanner" class="p-3 rounded-xl bg-slate-900 text-slate-300 border border-slate-800 text-xs mono flex items-center justify-between">
       <div class="flex items-center gap-2">
         <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="liveStatusText">Пошук вакансій у реальному часі</span>
+        <span id="liveStatusText">Пошук діючих вакансій</span>
       </div>
-      <span id="liveSpeedText" class="text-slate-500">Прямі діючі оголошення</span>
+      <span id="liveSpeedText" class="text-slate-400">Прямі діючі посилання на повні оголошення</span>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -249,11 +286,11 @@ HTML_UI = """<!DOCTYPE html>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="expFilter" value="no-exp" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Без досвіду / Студент</span>
+                <span>Без досвіду / Junior</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="expFilter" value="Junior" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Junior (до 1 року)</span>
+                <input type="radio" name="expFilter" value="Middle" onchange="applyFilters()" class="text-[#e23838]" />
+                <span>Middle / Досвідчені</span>
               </label>
             </div>
           </div>
@@ -266,19 +303,23 @@ HTML_UI = """<!DOCTYPE html>
           </div>
 
           <div class="space-y-2 pt-2 border-t border-slate-100">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Зарплата від</label>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600">Зарплата</label>
             <div class="space-y-1.5 text-xs">
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="salFilter" value="0" checked onchange="applyFilters()" class="text-[#e23838]" />
-                <span>Будь-яка</span>
+                <span>Будь-яка (включаючи за домовленістю)</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="salFilter" value="25000" onchange="applyFilters()" class="text-[#e23838]" />
-                <span>від 25 000 грн</span>
+                <input type="radio" name="salFilter" value="20000" onchange="applyFilters()" class="text-[#e23838]" />
+                <span>від 20 000 грн</span>
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="salFilter" value="35000" onchange="applyFilters()" class="text-[#e23838]" />
                 <span>від 35 000 грн</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="salFilter" value="50000" onchange="applyFilters()" class="text-[#e23838]" />
+                <span>від 50 000 грн</span>
               </label>
             </div>
           </div>
@@ -291,9 +332,9 @@ HTML_UI = """<!DOCTYPE html>
             <h2 class="text-base sm:text-lg font-bold text-slate-900" id="resultsTitle">
               Вакансії в Україні (Сторінка <span id="curPageNum">1</span>)
             </h2>
-            <span class="text-xs text-slate-500" id="resultsCount">Отримання карток...</span>
+            <span class="text-xs text-slate-500" id="resultsCount">Отримання вакансій...</span>
           </div>
-          <div class="text-xs font-mono text-slate-500">Прямі діючі оголошення</div>
+          <div class="text-xs font-mono text-slate-500 hidden sm:block">Прямі посилання</div>
         </div>
 
         <div id="cardsList" class="space-y-3.5"></div>
@@ -359,14 +400,14 @@ HTML_UI = """<!DOCTYPE html>
 
       <div class="pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
         <div class="text-[11px] text-slate-400 mono">
-          ID: #<span id="modalJobId"></span> • Пряме діюче оголошення
+          ID: #<span id="modalJobId"></span> • Пряме офіційне посилання
         </div>
         <div class="flex items-center gap-2 w-full sm:w-auto">
           <button onclick="closeModal()" class="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-100 cursor-pointer">
             Закрити
           </button>
           <a id="modalDirectLink" href="#" target="_blank" rel="noopener noreferrer" class="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white transition text-center shadow-sm">
-            Відкрити на сайті оголошення ↗
+            Відкрити повне оголошення на сайті ↗
           </a>
         </div>
       </div>
@@ -377,11 +418,11 @@ HTML_UI = """<!DOCTYPE html>
   <footer id="appFooter" class="border-t border-slate-200 bg-white py-6 mt-12 transition">
     <div class="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
       <div class="flex items-center gap-2">
-        <span class="font-bold text-[#e23838]">Work.ua</span>
+        <span class="font-bold text-[#e23838]">Work.ua & Robota.ua</span>
         <span>•</span>
-        <span>Сайт пошуку роботи в Україні</span>
+        <span>Пошук вакансій в Україні</span>
       </div>
-      <div class="mono text-[11px]">Пошук вакансій по всій Україні</div>
+      <div class="mono text-[11px]">Прямі переходи на повні оголошення</div>
     </div>
   </footer>
 
@@ -477,7 +518,7 @@ HTML_UI = """<!DOCTYPE html>
       const city = document.getElementById('citySelect').value;
       const cardsList = document.getElementById('cardsList');
 
-      cardsList.innerHTML = `<div class="p-10 text-center text-slate-400 text-sm mono">Завантаження діючих оголошень зі сторінки ${page}...</div>`;
+      cardsList.innerHTML = `<div class="p-10 text-center text-slate-400 text-sm mono">Завантаження актуальних вакансій зі сторінки ${page}...</div>`;
       const t0 = performance.now();
 
       try {
@@ -514,10 +555,14 @@ HTML_UI = """<!DOCTYPE html>
 
       return currentRawVacancies.filter(v => {
         if (showSavedOnly && !savedIds.includes(v.id)) return false;
-        if (exp === 'no-exp' && v.experienceLevel !== 'Trainee/No Exp' && v.experienceLevel !== 'Junior') return false;
-        if (exp === 'Junior' && v.experienceLevel !== 'Junior') return false;
+        if (exp === 'no-exp' && !v.experienceLevel.includes('Junior') && !v.experienceLevel.includes('Без досвіду')) return false;
+        if (exp === 'Middle' && !v.experienceLevel.includes('Middle') && !v.experienceLevel.includes('Senior')) return false;
         if (remote && !v.isRemote) return false;
-        if (sal > 0 && v.salaryMin && v.salaryMin < sal) return false;
+        if (sal > 0) {
+          if (v.salaryMin === 0 && v.salaryMax === 0) return false;
+          const maxVal = v.salaryMax || v.salaryMin;
+          if (maxVal < sal) return false;
+        }
         return true;
       });
     }
@@ -544,7 +589,7 @@ HTML_UI = """<!DOCTYPE html>
       cardsList.innerHTML = list.map(v => {
         const bg = isDark ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200 hover:border-slate-300';
         const tColor = isDark ? 'text-sky-400 hover:text-sky-300' : 'text-[#0066cc] hover:text-[#004c99]';
-        const sColor = isDark ? 'text-emerald-400' : 'text-slate-900';
+        const sColor = (v.salaryMin > 0 || v.salaryMax > 0) ? (isDark ? 'text-emerald-400' : 'text-emerald-700') : (isDark ? 'text-slate-400' : 'text-slate-600');
         const isFav = savedIds.includes(v.id);
 
         return `
@@ -552,8 +597,8 @@ HTML_UI = """<!DOCTYPE html>
             <div class="flex items-start justify-between gap-3">
               <div>
                 <h3 class="text-base sm:text-lg font-bold leading-snug">
-                  <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="${tColor} transition hover:underline">
-                    ${v.title}
+                  <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="${tColor} transition hover:underline" title="Відкрити повне оголошення">
+                    ${v.title} ↗
                   </a>
                 </h3>
                 <div class="text-sm sm:text-base font-bold font-mono ${sColor} mt-0.5">
@@ -587,7 +632,7 @@ HTML_UI = """<!DOCTYPE html>
 
             <div class="flex items-center justify-between pt-2 border-t ${isDark ? 'border-slate-800' : 'border-slate-100'} text-xs">
               <button onclick="openModal('${v.id}')" class="text-xs font-bold text-[#e23838] hover:underline cursor-pointer flex items-center gap-1">
-                <span>📖 Відкрити тут</span>
+                <span>📖 Переглянути опис</span>
               </button>
               <a href="${v.url}" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#e23838] hover:bg-[#c92f2f] text-white transition flex items-center gap-1 shadow-2xs">
                 <span>Перейти до оголошення ↗</span>
@@ -620,7 +665,7 @@ HTML_UI = """<!DOCTYPE html>
       document.getElementById('modalCompany').innerText = v.company;
       document.getElementById('modalCity').innerText = v.city;
       document.getElementById('modalExp').innerText = v.experienceLevel;
-      document.getElementById('modalJobId').innerText = v.jobId || '10927359';
+      document.getElementById('modalJobId').innerText = v.jobId;
       
       const remoteBadge = document.getElementById('modalRemoteBadge');
       if (v.isRemote) {
@@ -664,11 +709,12 @@ HTML_UI = """<!DOCTYPE html>
 </html>
 """
 
-# === 4. ENTRYPOINT ===
 def run():
-    server = HTTPServer(('0.0.0.0', PORT), ScraperServer)
-    print(f"🚀 Work.ua & Robota.ua Live Scraper running on port {PORT}")
-    sys.stdout.flush()
+    class ThreadedServer(ThreadingHTTPServer):
+        allow_reuse_address = True
+
+    server = ThreadedServer(('0.0.0.0', PORT), ScraperServer)
+    print(f"🚀 Job Search Server successfully started on port {PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
