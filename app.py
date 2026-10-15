@@ -189,6 +189,8 @@ def fetch_robota_vacancies(query, page, city, count=35):
             })
         return items
 
+fetch_robota_api = fetch_robota_vacancies
+
 def scrape_dou_vacancies(query, page, city):
     """Парсить 15-20 вакансій з DOU.ua через BeautifulSoup для потрібної сторінки."""
     kw = query.strip() or "all"
@@ -272,7 +274,7 @@ def fetch_multi_source_vacancies(query="", page=1, city=""):
 
     # 1. Запит до Robota.ua (~35 вакансій)
     try:
-        robota_items = fetch_robota_api(effective_q, page, city, count=35)
+        robota_items = fetch_robota_vacancies(effective_q, page, city, count=35)
         if robota_items:
             all_vacancies.extend(robota_items)
     except Exception as e:
