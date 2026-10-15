@@ -265,7 +265,6 @@ def scrape_dou_vacancies(query, page, city):
     return items
 
 def fetch_multi_source_vacancies(query="", page=1, city=""):
-    """Об'єднує збір з Robota.ua (35) + DOU (15) для досягнення +- 50 вакансій за сторінку."""
     corrected_q, original_q = correct_query_spelling(query)
     effective_q = corrected_q or query
 
@@ -357,7 +356,7 @@ HTML_UI = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Пошук роботи в Україні • Robota.ua & DOU (50+ вакансій)</title>
+  <title>Пошук роботи в Україні • Robota.ua & DOU вакансій</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config = { darkMode: 'class' };</script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -370,7 +369,7 @@ HTML_UI = """<!DOCTYPE html>
         <div class="h-8 w-8 rounded-lg bg-[#e23838] flex items-center justify-center text-white font-black text-lg">W</div>
         <div>
           <span class="text-xl font-black text-slate-900 dark:text-white">Work<span class="text-[#e23838]">.ua</span> & MultiHub</span>
-          <span class="text-[10px] text-slate-500 block">Парсинг 50+ вакансій з Robota.ua + DOU</span>
+          <span class="text-[10px] text-slate-500 block">Парсинг вакансій з Robota.ua + DOU</span>
         </div>
       </a>
       <div class="flex items-center gap-2">
@@ -404,7 +403,7 @@ HTML_UI = """<!DOCTYPE html>
           <option value="Дніпро">Дніпро</option><option value="Харків">Харків</option><option value="Дистанційно">Дистанційно (Remote)</option>
         </select>
         <button onclick="executeSearch(1)" class="px-7 py-2.5 rounded-xl font-bold text-sm text-white bg-[#e23838] hover:bg-[#c92f2f] cursor-pointer shadow-sm">
-          Знайти ~50 вакансій
+          Знайти
         </button>
       </div>
 
@@ -429,7 +428,7 @@ HTML_UI = """<!DOCTYPE html>
     </div>
 
     <div class="p-3 rounded-xl bg-slate-900 text-slate-300 border border-slate-800 text-xs mono flex justify-between items-center">
-      <div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span><span id="liveStatusText">Пошук +- 50 вакансій за раз</span></div>
+      <div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span><span id="liveStatusText">Пошук</span></div>
       <span id="liveSpeedText" class="text-slate-400">Джерела: Robota.ua + DOU (BeautifulSoup)</span>
     </div>
 
@@ -460,7 +459,7 @@ HTML_UI = """<!DOCTYPE html>
 
       <section class="lg:col-span-8 space-y-4">
         <div class="flex justify-between items-center text-sm">
-          <span class="font-bold" id="resultsCount">Завантаження +- 50 вакансій...</span>
+          <span class="font-bold" id="resultsCount">Завантаження...</span>
           <span class="text-xs text-slate-400 mono">Сторінка <span id="curPageNum">1</span></span>
         </div>
         <div id="cardsList" class="space-y-3.5"></div>
@@ -652,7 +651,7 @@ HTML_UI = """<!DOCTYPE html>
       const cl = document.getElementById('cardsList');
       closeSuggestions();
 
-      cl.innerHTML = `<div class="p-10 text-center text-slate-400 text-xs mono">Завантаження +- 50 вакансій зі сторінки ${page} (Robota.ua + DOU)...</div>`;
+      cl.innerHTML = `<div class="p-10 text-center text-slate-400 text-xs mono">Завантаження ${page} (Robota.ua + DOU)...</div>`;
       const t0 = performance.now();
 
       try {
